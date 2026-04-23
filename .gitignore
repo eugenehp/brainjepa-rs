@@ -1,0 +1,9 @@
+/target
+data/*.safetensors
+data/*.pt
+*.pth
+*.pth.tar
+
+# Keep gradient CSV (small, needed for inference)
+!data/gradient_mapping_450.csv
+hf_model_card

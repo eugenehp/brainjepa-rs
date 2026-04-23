@@ -1,0 +1,102 @@
+[package]
+name = "brainjepa"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+description = "Brain-JEPA fMRI Foundation Model — inference in Rust with Burn ML"
+keywords      = ["fmri", "foundation-model", "neuroscience", "brain", "vision-transformer"]
+categories    = ["science", "mathematics", "algorithms"]
+authors       = ["Eugene Hauptmann"]
+license       = "MIT"
+homepage      = "https://github.com/eugenehp/brainjepa-rs"
+repository    = "https://github.com/eugenehp/brainjepa-rs"
+documentation = "https://docs.rs/brainjepa"
+readme        = "README.md"
+
+exclude = [
+    "data/*",
+    "figures/*",
+    "hf_model_card/*",
+]
+
+[lib]
+name = "brainjepa"
+path = "src/lib.rs"
+
+[[bin]]
+name = "infer"
+path = "src/bin/infer.rs"
+
+[[example]]
+name = "embed"
+path = "examples/embed.rs"
+
+[[example]]
+name = "batch"
+path = "examples/batch.rs"
+required-features = ["ndarray"]
+
+[[example]]
+name = "classify"
+path = "examples/classify.rs"
+required-features = ["ndarray"]
+
+[[example]]
+name = "csv_export"
+path = "examples/csv_export.rs"
+required-features = ["ndarray"]
+
+[[example]]
+name = "profile"
+path = "examples/profile.rs"
+required-features = ["ndarray"]
+
+[features]
+default = ["ndarray"]
+# CPU backend — Rayon multi-threading + SIMD enabled by default
+ndarray         = ["dep:burn-ndarray", "burn/ndarray"]
+# macOS: swap matmul impl to Apple Accelerate (multi-threaded, very fast on Apple Silicon)
+# Recommended: cargo build --release --features accelerate
+accelerate      = ["blas-accelerate"]
+blas-accelerate = ["burn-ndarray?/blas-accelerate"]
+# Linux: use system OpenBLAS (apt install libopenblas-dev)
+openblas-system = ["burn-ndarray?/blas-openblas-system"]
+# GPU backend — wgpu on Metal (macOS) or Vulkan (Linux with GPU)
+wgpu            = ["burn/wgpu"]
+# GPU backend with f16 (half-precision) — 2x less memory, faster on supported GPUs.
+# Requires Metal (macOS) or Vulkan (Linux). Not compatible with ndarray (CPU).
+# Usage: cargo build --release --no-default-features --features wgpu-f16
+wgpu-f16        = ["burn/wgpu"]
+# HuggingFace Hub downloader — requires TLS
+hf-download     = ["dep:hf-hub"]
+
+[dependencies]
+burn = { version = "0.20.1", default-features = false, features = ["std", "simd"] }
+burn-ndarray = { version = "0.20.1", default-features = false, features = ["std", "simd", "multi-threads"], optional = true }
+
+safetensors = "0.7"
+half = { version = "2", features = ["bytemuck"] }
+rayon = "1"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+anyhow = "1"
+fastrand = "2"
+thiserror = "2"
+ndarray = "0.16"
+
+# HuggingFace Hub client — optional; only compiled with --features hf-download.
+hf-hub = { version = "0.5", default-features = false, features = ["ureq"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[patch.crates-io]
+cubek-matmul = { git = "https://github.com/eugenehp/cubek.git", branch = "cubek-matmul", package = "cubek-matmul" }
