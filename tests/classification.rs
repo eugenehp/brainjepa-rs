@@ -11,13 +11,13 @@ fn device() -> burn::backend::ndarray::NdArrayDevice {
 
 #[test]
 fn classification_head_new_stores_num_classes() {
-    let head = brainjepa::ClassificationHead::<B>::new(768, 2, &device());
+    let head = brainjepa::burn::ClassificationHead::<B>::new(768, 2, &device());
     assert_eq!(head.num_classes, 2);
 }
 
 #[test]
 fn classification_head_new_different_dims() {
-    let head = brainjepa::ClassificationHead::<B>::new(384, 5, &device());
+    let head = brainjepa::burn::ClassificationHead::<B>::new(384, 5, &device());
     assert_eq!(head.num_classes, 5);
 }
 
@@ -26,7 +26,7 @@ fn classification_head_new_different_dims() {
 #[test]
 fn classification_head_forward_shape() {
     // Use batch > 1 to avoid squeeze singleton edge case in ClassificationHead::forward
-    let head = brainjepa::ClassificationHead::<B>::new(768, 2, &device());
+    let head = brainjepa::burn::ClassificationHead::<B>::new(768, 2, &device());
     let input = Tensor::<B, 3>::zeros([2, 100, 768], &device());
     let logits = head.forward(input);
     assert_eq!(logits.dims(), [2, 2]);
@@ -34,7 +34,7 @@ fn classification_head_forward_shape() {
 
 #[test]
 fn classification_head_forward_batch() {
-    let head = brainjepa::ClassificationHead::<B>::new(768, 3, &device());
+    let head = brainjepa::burn::ClassificationHead::<B>::new(768, 3, &device());
     let input = Tensor::<B, 3>::zeros([4, 50, 768], &device());
     let logits = head.forward(input);
     assert_eq!(logits.dims(), [4, 3]);
@@ -42,7 +42,7 @@ fn classification_head_forward_batch() {
 
 #[test]
 fn classification_head_forward_small_embed() {
-    let head = brainjepa::ClassificationHead::<B>::new(64, 10, &device());
+    let head = brainjepa::burn::ClassificationHead::<B>::new(64, 10, &device());
     let input = Tensor::<B, 3>::zeros([2, 20, 64], &device());
     let logits = head.forward(input);
     assert_eq!(logits.dims(), [2, 10]);
@@ -53,10 +53,10 @@ fn classification_head_forward_small_embed() {
 #[test]
 fn predict_classes_returns_valid_indices() {
     // Use batch > 1 to avoid squeeze singleton edge case
-    let head = brainjepa::ClassificationHead::<B>::new(768, 2, &device());
+    let head = brainjepa::burn::ClassificationHead::<B>::new(768, 2, &device());
     let input = Tensor::<B, 3>::random([2, 100, 768], burn::tensor::Distribution::Default, &device());
     let logits = head.forward(input);
-    let classes = brainjepa::predict_classes(logits);
+    let classes = brainjepa::burn::predict_classes(logits);
     assert_eq!(classes.dims(), [2]);
 
     let vals: Vec<i64> = classes.into_data().to_vec::<i64>().unwrap();
@@ -67,10 +67,10 @@ fn predict_classes_returns_valid_indices() {
 
 #[test]
 fn predict_classes_batch() {
-    let head = brainjepa::ClassificationHead::<B>::new(384, 4, &device());
+    let head = brainjepa::burn::ClassificationHead::<B>::new(384, 4, &device());
     let input = Tensor::<B, 3>::random([3, 50, 384], burn::tensor::Distribution::Default, &device());
     let logits = head.forward(input);
-    let classes = brainjepa::predict_classes(logits);
+    let classes = brainjepa::burn::predict_classes(logits);
     assert_eq!(classes.dims(), [3]);
 
     let vals: Vec<i64> = classes.into_data().to_vec::<i64>().unwrap();
@@ -86,7 +86,7 @@ fn predict_classes_deterministic_for_known_logits() {
         TensorData::new(vec![-10.0f32, 10.0, 5.0, -5.0], vec![2, 2]),
         &device(),
     );
-    let classes = brainjepa::predict_classes(logits);
+    let classes = brainjepa::burn::predict_classes(logits);
     let vals: Vec<i64> = classes.into_data().to_vec::<i64>().unwrap();
     assert_eq!(vals, vec![1, 0]);
 }

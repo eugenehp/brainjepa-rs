@@ -1,52 +1,17 @@
 //! # brainjepa-rs — Brain-JEPA fMRI Foundation Model inference in Rust
 //!
-//! Pure-Rust inference for the [Brain-JEPA](https://github.com/hzlab/Brain-JEPA)
-//! fMRI foundation model, built on [Burn 0.20](https://burn.dev).
+//! Default inference uses [RLX](https://docs.rs/rlx). [Burn](https://burn.dev) is
+//! optional (`burn-engine`) for benchmarks and parity comparison only.
 //!
-//! Brain-JEPA maps parcellated fMRI time series (450 ROIs × T time points)
-//! to latent representations using a Vision Transformer with:
-//! - **Brain gradient positioning** for ROI spatial embeddings
-//! - **Temporal patch embedding** via 1D convolution along time
-//! - **JEPA architecture** (encoder + predictor with momentum target)
-//!
-//! ## Three entry points
-//!
-//! | Type | Loads | Use case |
-//! |---|---|---|
-//! | [`BrainJepaEncoder`] | encoder only | produce latent embeddings |
-//! | [`BrainJepaPredictor`] | encoder + predictor | JEPA evaluation with masking |
-//! | [`ClassificationHead`] | classification layer | downstream classification |
-//!
-//! ## Quick start — encode fMRI
-//!
-//! ```rust,ignore
-//! use brainjepa::{BrainJepaEncoder, ModelConfig, DataConfig};
-//!
-//! let (enc, ms) = BrainJepaEncoder::<B>::from_weights(
-//!     "model.safetensors",
-//!     "gradient_mapping_450.csv",
-//!     &ModelConfig::default(),
-//!     &DataConfig::default(),
-//!     &device,
-//! )?;
-//! let result = enc.encode_safetensors("data/fmri.safetensors")?;
-//! result.save_safetensors("embeddings.safetensors")?;
-//! ```
-//!
-//! ## Backends
-//!
-//! | Feature | Backend | Notes |
-//! |---|---|---|
-//! | `ndarray` (default) | CPU (NdArray + Rayon) | Add `blas-accelerate` on macOS |
-//! | `wgpu` | GPU (Metal / Vulkan) | `--no-default-features --features wgpu` |
-//! | `wgpu-f16` | GPU (half precision) | `--no-default-features --features wgpu-f16` |
+//! | Feature | Binaries | Use |
+//! |---------|----------|-----|
+//! | `rlx-engine` (default) | `infer`, `classify` | Production inference |
+//! | `burn-engine` | `infer-burn` | Parity / benchmarks |
 
-// ── Thread configuration ─────────────────────────────────────────────────────
+#[cfg(not(any(feature = "burn", feature = "rlx")))]
+compile_error!("enable at least one inference engine: `rlx-engine` (default) and/or `burn-engine`");
 
 /// Configure the global Rayon thread pool.
-///
-/// Call this **once**, before any model operations.
-/// Returns the actual number of threads in the pool.
 pub fn init_threads(n: Option<usize>) -> usize {
     let mut builder = rayon::ThreadPoolBuilder::new();
     if let Some(count) = n {
@@ -58,52 +23,61 @@ pub fn init_threads(n: Option<usize>) -> usize {
     rayon::current_num_threads()
 }
 
-// ── Internal modules ─────────────────────────────────────────────────────────
-
-pub mod classification;
 pub mod config;
 pub mod csv_export;
 pub mod data;
 pub mod error;
 pub mod hf_download;
-pub mod inference;
 pub mod masks;
-pub mod model;
-pub mod predictor_api;
 pub mod prelude;
-pub mod weights;
 
-// ── Flat re-exports ──────────────────────────────────────────────────────────
+#[cfg(feature = "rlx")]
+pub mod rlx;
 
-// Configs
+#[cfg(feature = "burn")]
+pub mod burn {
+    //! Burn reference implementation — parity and benchmarks only.
+    pub use crate::classification::{predict_classes, ClassificationHead};
+    pub use crate::inference::{BrainJepaEncoder, EmbeddingResult};
+    pub use crate::predictor_api::BrainJepaPredictor;
+    pub use crate::masks::mask_config_for;
+    pub use crate::data::FmriInput;
+    pub use crate::masks::{
+        full_context_mask_tensor as full_context_mask, jepa_masks_tensor as jepa_masks,
+        random_block_mask_tensor as random_block_mask, MaskConfig,
+    };
+    pub use crate::model::encoder::apply_masks;
+    pub use crate::weights::{WeightFilter, WeightMap};
+}
+
+#[cfg(feature = "burn")]
+mod classification;
+#[cfg(feature = "burn")]
+mod inference;
+#[cfg(feature = "burn")]
+mod model;
+#[cfg(feature = "burn")]
+mod predictor_api;
+#[cfg(feature = "burn")]
+mod weights;
+
 pub use config::{DataConfig, ModelConfig, YamlConfig};
-
-// Encoder-only inference
-pub use inference::{BrainJepaEncoder, EmbeddingResult};
-
-// Encoder + Predictor (JEPA evaluation)
-pub use predictor_api::BrainJepaPredictor;
-
-// Classification head
-pub use classification::{ClassificationHead, predict_classes};
-
-// Data types
-pub use data::{FmriInput, GradientData};
-
-// Masking
-pub use masks::{MaskConfig, full_context_mask, jepa_masks};
-
-// Errors
+pub use data::{FmriInputF32, GradientData};
 pub use error::{BrainJepaError, Result};
-
-// Model internals (advanced usage)
-pub use model::encoder::apply_masks;
-
-// Weights
-pub use weights::{WeightFilter, WeightMap};
-
-// CSV export
 pub use csv_export::save_embeddings_csv;
-
-// HuggingFace download
 pub use hf_download::{resolve as resolve_weights, ResolvedWeights, DEFAULT_REPO};
+pub use masks::{
+    full_context_mask, jepa_masks, mask_config_for, random_block_mask, MaskConfig,
+};
+
+#[cfg(feature = "rlx")]
+pub use rlx::{
+    predict_class, AttnLayout, BrainJepaEncoder, BrainJepaPredictor,
+    RlxClassificationHead as ClassificationHead,
+};
+
+#[cfg(feature = "rlx")]
+pub use rlx::EmbeddingResult;
+
+#[cfg(all(feature = "burn", not(feature = "rlx")))]
+pub use inference::EmbeddingResult;

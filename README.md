@@ -1,11 +1,16 @@
 # brainjepa-rs
 
-**Brain-JEPA fMRI Foundation Model -- fully Rust inference pipeline.**
+**Brain-JEPA fMRI Foundation Model — fully Rust inference pipeline.**
 
 `brainjepa` ports the [Brain-JEPA](https://github.com/hzlab/Brain-JEPA) encoder
-(NeurIPS 2024, Spotlight) entirely to Rust using the
-[Burn ML framework](https://burn.dev/). Pretrained weights are loaded from
-safetensors and inference runs without Python or PyTorch.
+(NeurIPS 2024, Spotlight) to Rust with two inference engines:
+
+| Engine | Cargo feature | Binary | Default |
+|--------|---------------|--------|---------|
+| [RLX](https://docs.rs/rlx) | `rlx-engine` | `infer`, `classify`, `predict` | yes |
+| [Burn](https://burn.dev) 0.20 | `burn-engine` | `infer-burn` | parity / benchmarks only |
+
+Pretrained weights load from safetensors; inference runs without Python or PyTorch.
 
 ```
 fMRI parcellated time series  (450 ROIs x T time points)
@@ -13,7 +18,7 @@ fMRI parcellated time series  (450 ROIs x T time points)
    v  Data loading (CSV / safetensors)
    |  standardise -> temporal downsample (490 -> 160 frames)
    |
-   v  Brain-JEPA encoder (Burn / NdArray or wgpu)
+   v  Brain-JEPA encoder (RLX or Burn)
    |  PatchEmbed       Conv2d(1, 768, (1,16), (1,16))
    |  GradientPosEmbed sincos + brain gradient projection
    |  12x Block        LayerNorm -> MultiHeadAttn -> LayerNorm -> MLP(GELU)
@@ -31,95 +36,158 @@ embeddings.safetensors
 ```sh
 # Rust stable >= 1.78
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Python -- only needed for one-time weight conversion from PyTorch
-pip install torch safetensors
 ```
 
-No PyTorch or Python needed at inference time.
+No PyTorch or Python needed at inference time (Python only for one-time weight conversion).
 
 ---
 
-## Weight conversion
+## Download weights (HuggingFace)
 
-Brain-JEPA checkpoints are distributed as PyTorch `.pth.tar` files.
-Convert to safetensors before use:
+Pre-converted weights: [eugenehp/BrainJEPA](https://huggingface.co/eugenehp/BrainJEPA)
 
 ```sh
-python scripts/convert_weights.py \
-    --input BrainJEPA-Checkpoints/Pretraining/jepa-ep300.pth.tar \
-    --output data/brainjepa.safetensors
+cargo run --release --bin download_weights --features hf-download
 ```
 
-Pre-converted weights are also available on HuggingFace:
-[eugenehp/BrainJEPA](https://huggingface.co/eugenehp/BrainJEPA)
+This caches `brainjepa.safetensors` (~709 MB) and `gradient_mapping_450.csv` under
+`~/.cache/huggingface/hub/`. The `infer` CLI resolves them automatically when
+`--weights` / `--gradient` are omitted (or set `BRAINJEPA_WEIGHTS` / `BRAINJEPA_GRADIENT`).
 
 ---
 
-## Quick start
+## Quick start (RLX — default)
 
 ```sh
-# CPU (default)
+# Download weights (once)
+cargo run --release --bin download_weights --features hf-download
+
+# CPU encode (weights from HF cache or data/)
+cargo run --release --bin infer -- \
+    --input data/fmri_sample.safetensors
+
+# Apple Metal (macOS)
+cargo run --release --no-default-features --features rlx-engine,rlx-metal --bin infer -- \
+    --device metal --input data/fmri_sample.safetensors
+
+# RLX + Apple Accelerate BLAS
+cargo run --release --no-default-features --features rlx-engine,rlx-blas-accelerate --bin infer -- \
+    --input data/fmri_sample.safetensors
+```
+
+Explicit paths still work:
+
+```sh
 cargo run --release --bin infer -- \
     --weights data/brainjepa.safetensors \
     --gradient data/gradient_mapping_450.csv \
     --input data/fmri_sample.safetensors
+```
 
-# macOS Apple Silicon (recommended for CPU -- uses Accelerate BLAS)
-cargo run --release --features accelerate --bin infer -- \
+### Classify and JEPA predict
+
+```sh
+# Downstream classification (optional --head-weights for trained head)
+cargo run --release --bin classify -- \
+    --input data/test_fmri.safetensors
+
+# JEPA encoder + predictor (deterministic masks, seed 42 by default)
+cargo run --release --bin predict -- \
+    --input data/test_fmri.safetensors
+```
+
+---
+
+## Burn reference path (`burn-engine`, `infer-burn`)
+
+```sh
+# CPU
+cargo run --release --no-default-features --features burn-engine --bin infer-burn -- \
     --weights data/brainjepa.safetensors \
     --gradient data/gradient_mapping_450.csv \
     --input data/fmri_sample.safetensors
 
-# GPU (Metal on macOS, Vulkan on Linux)
-cargo run --release --no-default-features --features wgpu --bin infer -- \
-    --weights data/brainjepa.safetensors \
-    --gradient data/gradient_mapping_450.csv \
-    --input data/fmri_sample.safetensors
+# macOS Accelerate
+cargo run --release --no-default-features --features burn-engine,blas-accelerate --bin infer-burn -- ...
 
-# GPU f16 (half-precision, fastest)
-cargo run --release --no-default-features --features wgpu-f16 --bin infer -- \
-    --weights data/brainjepa.safetensors \
-    --gradient data/gradient_mapping_450.csv \
-    --input data/fmri_sample.safetensors
+# GPU (Metal / Vulkan)
+cargo run --release --no-default-features --features burn,wgpu --bin infer-burn -- ...
+```
+
+Parity builds enable **both** engines:
+
+```sh
+cargo test --release --no-default-features \
+  --features burn-engine,rlx-engine --test parity_rlx_vs_burn
 ```
 
 ---
 
 ## Backends
 
-| Feature | Backend | Build command |
-|---|---|---|
-| `ndarray` (default) | CPU, Rayon multi-threading + SIMD | `cargo build --release` |
-| `accelerate` | CPU, Apple Accelerate BLAS (macOS) | `cargo build --release --features accelerate` |
-| `openblas-system` | CPU, OpenBLAS (Linux) | `cargo build --release --features openblas-system` |
-| `wgpu` | GPU, Metal (macOS) / Vulkan (Linux) | `cargo build --release --no-default-features --features wgpu` |
-| `wgpu-f16` | GPU, half-precision | `cargo build --release --no-default-features --features wgpu-f16` |
+### RLX (default)
+
+| Feature | Backend | Build |
+|---------|---------|-------|
+| `rlx-cpu` (default) | CPU + Rayon | `cargo build --release` |
+| `rlx-blas-accelerate` | CPU + Apple Accelerate | `--features rlx-engine,rlx-blas-accelerate` |
+| `rlx-blas-openblas` | CPU + OpenBLAS (Linux) | `--features rlx-engine,rlx-blas-openblas` |
+| `rlx-metal` | Apple Metal | `--features rlx-engine,rlx-metal` |
+| `rlx-gpu` | wgpu (cross-platform) | `--features rlx-engine,rlx-gpu` |
+| `rlx-mlx` | Apple MLX | `--features rlx-engine,rlx-mlx` |
+| `rlx-cuda` | NVIDIA CUDA | `--features rlx-engine,rlx-cuda` |
+| `rlx-apple-silicon` | cpu + metal + accelerate | `--features rlx-engine,rlx-apple-silicon` |
+
+### Burn (optional)
+
+| Feature | Backend | Build |
+|---------|---------|-------|
+| `ndarray` | CPU, Rayon + SIMD | `--no-default-features --features burn,ndarray` |
+| `blas-accelerate` | CPU + Accelerate | `burn,ndarray,blas-accelerate` |
+| `wgpu` | GPU Metal/Vulkan | `burn,wgpu` |
+| `wgpu-f16` | GPU half precision | `burn,wgpu-f16` |
 
 ---
 
 ## CLI
 
 ```
-Brain-JEPA fMRI encoder inference (Burn 0.20.1)
+Brain-JEPA fMRI encoder inference (RLX default, optional Burn)
 
-Usage: infer [OPTIONS] --weights <WEIGHTS> --gradient <GRADIENT> --input <INPUT>
+Usage: infer [OPTIONS] --input <INPUT>
 
 Options:
-      --weights <WEIGHTS>    Safetensors weights file
-      --gradient <GRADIENT>  Brain gradient mapping CSV (450 ROIs x 3 gradient axes)
-      --input <INPUT>        fMRI input file (.safetensors or .csv)
-      --output <OUTPUT>      Output safetensors file [default: embeddings.safetensors]
-      --model <MODEL>        Model variant: vit_small, vit_base, vit_large [default: vit_base]
-      --config <CONFIG>      YAML config file (optional, overrides --model)
-      --threads <THREADS>    CPU threads (0 = all cores) [env: RAYON_NUM_THREADS]
-  -v, --verbose              Verbose output
-  -h, --help                 Print help
+      --weights <WEIGHTS>     Safetensors weights [env: BRAINJEPA_WEIGHTS]
+      --gradient <GRADIENT>   Gradient CSV [env: BRAINJEPA_GRADIENT]
+      --input <INPUT>         fMRI input (.safetensors or .csv)
+      --output <OUTPUT>       Output embeddings [default: embeddings.safetensors]
+      --model <MODEL>         vit_small | vit_base | vit_large [default: vit_base]
+      --device <DEVICE>       RLX: cpu | metal | mlx | gpu | cuda | rocm | tpu (aliases: wgpu, mtl) [default: cpu]
+      --repo <REPO>           HuggingFace repo [default: eugenehp/BrainJEPA]
+      --threads <THREADS>     CPU threads [env: RAYON_NUM_THREADS]
+  -v, --verbose
 ```
 
 ---
 
-## Library usage
+## Library usage (RLX default)
+
+```rust
+use brainjepa::prelude::*;
+
+let (mut encoder, _ms) = BrainJepaEncoder::from_weights(
+    "data/brainjepa.safetensors",
+    "data/gradient_mapping_450.csv",
+    &ModelConfig::default(),
+    &DataConfig::default(),
+    &rlx::Device::Cpu,
+)?;
+
+let result = encoder.encode_safetensors("data/fmri_sample.safetensors")?;
+result.save_safetensors("embeddings.safetensors")?;
+```
+
+Burn path (with `--features burn,ndarray`):
 
 ```rust
 use brainjepa::prelude::*;
@@ -127,162 +195,106 @@ use burn::backend::NdArray;
 
 type B = NdArray;
 let device = burn::backend::ndarray::NdArrayDevice::Cpu;
-
-let (encoder, _ms) = BrainJepaEncoder::<B>::from_weights(
-    "data/brainjepa.safetensors",
-    "data/gradient_mapping_450.csv",
-    &ModelConfig::default(),
-    &DataConfig::default(),
-    &device,
-)?;
-
-let result = encoder.encode_safetensors("data/fmri_sample.safetensors")?;
-result.save_safetensors("embeddings.safetensors")?;
+let (encoder, _) = BrainJepaEncoder::<B>::from_weights(...)?;
 ```
 
-### Three entry points
+### Entry points
 
-| Type | Loads | Use case |
-|---|---|---|
-| `BrainJepaEncoder` | encoder only | produce latent embeddings |
-| `BrainJepaPredictor` | encoder + predictor | JEPA evaluation with masking |
-| `ClassificationHead` | classification layer | downstream classification |
+| Type | Feature | Use case |
+|------|---------|----------|
+| `BrainJepaEncoder` | `rlx` or `burn` | latent embeddings |
+| `BrainJepaPredictor` | `burn` only | JEPA evaluation |
+| `ClassificationHead` | `burn` only | downstream classification |
+
+---
+
+## Device errors
+
+If you pick a backend that was not compiled in, `infer` prints a rebuild command using
+**brainjepa** feature names (e.g. `rlx-metal`, not just `metal`):
+
+```text
+cargo build --release --no-default-features --features rlx-engine,rlx-metal
+cargo run --release --no-default-features --features rlx-engine,rlx-metal --bin infer -- --device metal ...
+
+# Compare every compiled RLX backend on one fMRI sample:
+cargo run --example backend_compare --release --features rlx-engine,rlx-metal,rlx-gpu
+```
+
+`mlx` is not on crates.io — use a git `rlx` dependency with the `mlx` feature, then enable `rlx-mlx` on this crate.
+
+On macOS, native `--device metal` is usually preferable to `--device gpu` (wgpu).
+
+---
+
+## Tests
+
+```sh
+# RLX graph smoke test (no weights)
+cargo test --features rlx-engine --test rlx_graph_compile
+
+# RLX param load vs real checkpoint
+cargo test --release --features rlx-engine --test rlx_weights_load
+
+# Parity gate (Burn → RLX migration) — see docs/PARITY.md
+bash scripts/parity.sh              # CPU vs Burn + GPU backends vs CPU
+bash scripts/parity.sh --quick      # RLX CPU vs Burn only
+```
+
+---
+
+## Weight conversion (from PyTorch)
+
+```sh
+python scripts/convert_weights.py \
+    --input BrainJEPA-Checkpoints/Pretraining/jepa-ep300.pth.tar \
+    --output data/brainjepa.safetensors
+```
 
 ---
 
 ## Architecture
 
-The encoder is a 12-layer Vision Transformer (ViT-Base) adapted for fMRI:
+ViT-Base encoder for fMRI: 450 ROIs × 160 time points → 4500 × 768 embeddings.
+See original [Brain-JEPA paper](https://arxiv.org/abs/2409.19407) for details.
 
-| Component | Details |
-|---|---|
-| Input | `[B, 1, 450, 160]` -- 450 ROIs, 160 time points |
-| Patch embedding | Conv2d temporal patches: kernel `(1, 16)`, stride `(1, 16)` |
-| Positional embedding | 2D sincos (ROI axis) + learned brain gradient projection (time axis) |
-| Transformer blocks | 12 layers, pre-norm, 12 heads, head_dim=64, MLP ratio=4 |
-| Activation | GELU |
-| Normalization | LayerNorm (eps=1e-6) |
-| Output | `[B, 4500, 768]` -- 4500 patch embeddings of 768 dims |
-
-The predictor (6-layer transformer, 384-dim) is also implemented for JEPA
-evaluation but is not needed for downstream embedding extraction.
-
-### Model variants
-
-| Variant | Embed dim | Depth | Heads | Params |
-|---|---|---|---|---|
-| `vit_small` | 384 | 12 | 6 | ~22M |
-| `vit_base` | 768 | 12 | 12 | ~86M |
-| `vit_large` | 1024 | 24 | 16 | ~307M |
-
----
-
-## Performance
-
-Tested on Mac Mini M4 Pro (14 cores, 64 GB) with the pretrained ViT-Base encoder.
-Input: `[1, 1, 450, 160]` (single sample). Best-of-3 encode time.
-
-| Backend | Encode | vs PyTorch CPU |
-|---|---|---|
-| Rust &mdash; NdArray + Rayon (CPU) | 28,778 ms | 0.06x |
-| Rust &mdash; NdArray + Accelerate (CPU) | 21,092 ms | 0.08x |
-| Python &mdash; PyTorch (CPU) | 1,782 ms | 1.0x |
-| Python &mdash; PyTorch MPS (GPU) | 581 ms | 3.1x |
-| Rust &mdash; wgpu f32 / Metal (GPU) | **83 ms** | **21.5x** |
-| Rust &mdash; wgpu f16 / Metal (GPU) | **85 ms** | **21.0x** |
-
-The Rust wgpu GPU backends are **~7x faster than PyTorch MPS** and **~21x
-faster than PyTorch CPU**. The CPU NdArray backends are slower than PyTorch
-for this model's large sequence length (4500 tokens) where burn's softmax
-implementation becomes the bottleneck; the `accelerate` feature provides a
-1.3x improvement via Apple's BLAS.
-
-![benchmark](figures/benchmark.png)
+| Variant | Embed dim | Depth | Heads |
+|---------|-----------|-------|-------|
+| `vit_small` | 384 | 12 | 6 |
+| `vit_base` | 768 | 12 | 12 |
+| `vit_large` | 1024 | 24 | 16 |
 
 ---
 
 ## Code structure
 
 ```
-brainjepa-rs/
-  Cargo.toml
-  benchmark.sh               # End-to-end backend benchmark script
-  src/
-    lib.rs                    # Public API, flat re-exports
-    classification.rs         # ClassificationHead for downstream tasks
-    config.rs                 # ModelConfig, DataConfig, YAML parser
-    csv_export.rs             # Export embeddings to CSV
-    data.rs                   # fMRI loading (CSV, safetensors), preprocessing
-    error.rs                  # BrainJepaError and Result type
-    hf_download.rs            # HuggingFace weight downloader
-    inference.rs              # BrainJepaEncoder -- main entry point
-    masks.rs                  # Spatiotemporal masking utilities
-    predictor_api.rs          # BrainJepaPredictor -- encoder + predictor
-    prelude.rs                # Convenience re-exports
-    weights.rs                # SafeTensors weight loading (bf16/f16/f32)
-    model/
-      mod.rs                  # linear_zeros helper
-      attention.rs            # Multi-head self-attention (QKV packed)
-      feedforward.rs          # MLP with GELU activation
-      norm.rs                 # LayerNorm wrapper
-      block.rs                # Pre-norm transformer block
-      patch_embed.rs          # Temporal patch embedding
-      pos_embed.rs            # 2D sincos + brain gradient positional embeddings
-      encoder.rs              # VisionTransformer (ViT encoder)
-      predictor.rs            # VisionTransformerPredictor (JEPA predictor)
-    bin/
-      infer.rs                # CLI binary
-  examples/
-    embed.rs                  # Minimal embedding example
-    batch.rs                  # Batch-encode multiple fMRI files
-    classify.rs               # Encoder + linear classification head
-    csv_export.rs             # Export embeddings to CSV
-    profile.rs                # Profile per-layer costs
-  tests/
-    config.rs                 # Configuration round-trip tests
-    data_loading.rs           # Data loading integration tests
-  scripts/
-    convert_weights.py        # PyTorch .pth.tar -> safetensors converter
-  data/
-    gradient_mapping_450.csv  # Brain gradient coordinates (450 ROIs x 30 axes)
-    brainjepa.safetensors     # Converted pretrained weights (from HF)
+src/
+  rlx/                  # RLX graph, weights loader, encoder inference
+  inference.rs          # Burn encoder (feature "burn")
+  model/                # Burn ViT modules
+  hf_download.rs        # HuggingFace cache + download
+  bin/
+    infer.rs            # CLI
+    download_weights.rs # HF downloader
+tests/
+  rlx_graph_compile.rs
+  rlx_weights_load.rs
+  parity_rlx_vs_burn.rs
+  parity_rlx_cross_backend.rs
+docs/
+  PARITY.md
+scripts/
+  parity.sh
 ```
-
----
-
-## Examples
-
-| Example | Description | Command |
-|---|---|---|
-| `embed` | Minimal single-file embedding (20 lines) | `cargo run --example embed --release -- data/brainjepa.safetensors data/gradient_mapping_450.csv data/test_fmri.safetensors` |
-| `batch` | Encode multiple fMRI files in one call | `cargo run --example batch --release -- data/brainjepa.safetensors data/gradient_mapping_450.csv file1.safetensors file2.safetensors` |
-| `classify` | Encoder + linear classification head | `cargo run --example classify --release -- data/brainjepa.safetensors data/gradient_mapping_450.csv data/test_fmri.safetensors` |
-| `csv_export` | Export embeddings to CSV for R/pandas | `cargo run --example csv_export --release -- data/brainjepa.safetensors data/gradient_mapping_450.csv data/test_fmri.safetensors embeddings.csv` |
-| `profile` | Profile per-layer compute costs | `cargo run --example profile --release` |
 
 ---
 
 ## Acknowledgement
 
-This crate reimplements the model from:
+> Zijian Dong et al. **Brain-JEPA** (NeurIPS 2024 Spotlight). [arXiv:2409.19407](https://arxiv.org/abs/2409.19407)
 
-> Zijian Dong, Ruilin Li, Yilei Wu, et al.
-> **Brain-JEPA: Brain Dynamics Foundation Model with Gradient Positioning and Spatiotemporal Masking.**
-> NeurIPS 2024 (Spotlight). [arXiv:2409.19407](https://arxiv.org/abs/2409.19407)
-
-The original Python implementation is at [hzlab/Brain-JEPA](https://github.com/hzlab/Brain-JEPA).
-Our codebase builds on [Burn](https://burn.dev/) and follows patterns from [zuna-rs](https://github.com/eugenehp/zuna-rs).
-
-## Citation
-
-```bibtex
-@article{BrainJEPA,
-  title={Brain-JEPA: Brain Dynamics Foundation Model with Gradient Positioning and Spatiotemporal Masking},
-  author={Zijian Dong and Ruilin Li and Yilei Wu and Thuan Tinh Nguyen and Joanna Su Xian Chong and Fang Ji and Nathanael Ren Jie Tong and Christopher Li Hsian Chen and Juan Helen Zhou},
-  journal={NeurIPS 2024},
-  year={2024}
-}
-```
+Original: [hzlab/Brain-JEPA](https://github.com/hzlab/Brain-JEPA). Patterns from [zuna-rs](https://github.com/eugenehp/zuna-rs).
 
 ## License
 

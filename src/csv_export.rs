@@ -1,6 +1,6 @@
 //! CSV export utilities for Brain-JEPA embeddings.
 
-use crate::inference::EmbeddingResult;
+use crate::EmbeddingResult;
 use std::io::Write;
 
 /// Write embeddings to a CSV file.

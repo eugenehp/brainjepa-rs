@@ -1,19 +1,54 @@
-//! Brain-JEPA encoder inference — RLX engine only.
+//! Brain-JEPA encoder inference — Burn engine only.
 //!
 //! ```text
-//! cargo build --release                              # rlx-engine (default)
-//! cargo build --release --no-default-features --features rlx-engine,rlx-metal
-//! cargo run --release --bin infer -- --device metal --input ...
+//! cargo build --release --no-default-features --features burn-engine --bin infer-burn
+//! cargo run --release --no-default-features --features burn-engine --bin infer-burn -- ...
 //! ```
 use std::time::Instant;
 
 use clap::Parser;
 
-use brainjepa::rlx::{ensure_device, parse_device, BrainJepaEncoder};
+use brainjepa::burn::BrainJepaEncoder;
 use brainjepa::{DataConfig, ModelConfig};
 
+#[cfg(all(feature = "wgpu-f16", not(feature = "ndarray"), not(feature = "wgpu")))]
+mod burn_backend {
+    pub type B = burn::backend::wgpu::Wgpu<half::f16, i32, u32>;
+    pub type Device = burn::backend::wgpu::WgpuDevice;
+    pub fn device() -> Device {
+        Device::DefaultDevice
+    }
+    pub const NAME: &str = "Burn GPU (wgpu f16)";
+}
+
+#[cfg(all(feature = "wgpu", not(feature = "ndarray"), not(feature = "wgpu-f16")))]
+mod burn_backend {
+    pub use burn::backend::{wgpu::WgpuDevice as Device, Wgpu as B};
+    pub fn device() -> Device {
+        Device::DefaultDevice
+    }
+    pub const NAME: &str = "Burn GPU (wgpu f32)";
+}
+
+#[cfg(feature = "ndarray")]
+mod burn_backend {
+    pub use burn::backend::NdArray as B;
+    pub type Device = burn::backend::ndarray::NdArrayDevice;
+    pub fn device() -> Device {
+        Device::Cpu
+    }
+    #[cfg(feature = "blas-accelerate")]
+    pub const NAME: &str = "Burn CPU (NdArray + Apple Accelerate)";
+    #[cfg(feature = "openblas-system")]
+    pub const NAME: &str = "Burn CPU (NdArray + OpenBLAS)";
+    #[cfg(not(any(feature = "blas-accelerate", feature = "openblas-system")))]
+    pub const NAME: &str = "Burn CPU (NdArray + Rayon)";
+}
+
+use burn_backend::{device as burn_device, B, NAME as BURN_NAME};
+
 #[derive(Parser, Debug)]
-#[command(about = "Brain-JEPA fMRI encoder inference (RLX engine)")]
+#[command(about = "Brain-JEPA fMRI encoder inference (Burn engine)")]
 struct Args {
     #[arg(long, env = "BRAINJEPA_WEIGHTS")]
     weights: Option<String>,
@@ -32,10 +67,6 @@ struct Args {
 
     #[arg(long)]
     config: Option<String>,
-
-    /// RLX device: cpu, metal, mlx, gpu, cuda, rocm, tpu (aliases: wgpu, mtl).
-    #[arg(long, default_value = "cpu")]
-    device: String,
 
     #[arg(long, default_value = brainjepa::DEFAULT_REPO)]
     repo: String,
@@ -61,12 +92,8 @@ fn main() -> anyhow::Result<()> {
     let weights = resolved.weights_path.display().to_string();
     let gradient = resolved.gradient_path.display().to_string();
 
-    let rlx_dev = parse_device(&args.device)?;
-    ensure_device(rlx_dev)?;
-    println!(
-        "Backend  : {}  ({n_threads} threads)",
-        brainjepa::rlx::device::display_name(rlx_dev)
-    );
+    let _ = burn_device();
+    println!("Backend  : {BURN_NAME}  ({n_threads} threads)");
 
     let (model_cfg, data_cfg) = if let Some(ref cfg_path) = args.config {
         let yaml = brainjepa::YamlConfig::from_file(cfg_path)?;
@@ -76,8 +103,9 @@ fn main() -> anyhow::Result<()> {
     };
 
     println!("Loading  : {weights}");
+    let dev = burn_device();
     let (mut encoder, ms_weights) =
-        BrainJepaEncoder::from_weights(&weights, &gradient, &model_cfg, &data_cfg, &rlx_dev)?;
+        BrainJepaEncoder::<B>::from_weights(&weights, &gradient, &model_cfg, &data_cfg, &dev)?;
     println!("Model    : {}  ({ms_weights:.0} ms)", encoder.describe());
 
     println!("Input    : {}", args.input);

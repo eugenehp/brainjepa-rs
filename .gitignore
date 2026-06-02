@@ -1,9 +1,17 @@
 /target
-data/*.safetensors
-data/*.pt
+
+# Model weights & checkpoints (use `download_weights` / HF cache)
+*.safetensors
+*.pt
 *.pth
 *.pth.tar
+*.bin
+*.ckpt
+data/*.safetensors
+data/*.pt
+weights/
 
 # Keep gradient CSV (small, needed for inference)
 !data/gradient_mapping_450.csv
+
 hf_model_card

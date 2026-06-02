@@ -1,29 +1,31 @@
 #!/bin/bash
-# benchmark.sh — Brain-JEPA multi-backend benchmark
+# benchmark.sh — Brain-JEPA RLX multi-backend benchmark
 #
 # Usage:
-#   bash benchmark.sh                 # build & bench all backends, 3 runs each
+#   bash benchmark.sh                 # build & bench RLX backends (cpu, metal, mlx on macOS)
 #   bash benchmark.sh --runs 5        # 5 iterations per backend
 #   bash benchmark.sh --no-build      # skip cargo build (use existing binaries)
-#   bash benchmark.sh --gpu-only      # skip CPU backends, only bench wgpu
+#   bash benchmark.sh --gpu-only        # skip CPU, only bench metal/mlx (macOS) or gpu (Linux)
+#   bash benchmark.sh --burn            # also bench Burn backends (ndarray, accelerate, wgpu)
 #
-# On macOS  -> builds ndarray, ndarray+accelerate, wgpu (Metal)
-# On Linux  -> builds ndarray, wgpu (Vulkan if GPU present)
+# On macOS  -> RLX: cpu, metal, mlx (+ optional Burn)
+# On Linux  -> RLX: cpu, gpu (+ optional Burn)
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
-RUNS=3; NO_BUILD=0; GPU_ONLY=0
+RUNS=3; NO_BUILD=0; GPU_ONLY=0; BURN=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --runs)      shift; RUNS="$1" ;;
         --runs=*)    RUNS="${1#--runs=}" ;;
         --no-build)  NO_BUILD=1 ;;
         --gpu-only)  GPU_ONLY=1 ;;
+        --burn)      BURN=1 ;;
         -h|--help)
-            printf 'Usage: bash %s [--runs N] [--no-build] [--gpu-only]\n' "$0"
+            printf 'Usage: bash %s [--runs N] [--no-build] [--gpu-only] [--burn]\n' "$0"
             exit 0 ;;
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
     esac
@@ -36,7 +38,6 @@ step() { printf '\n\033[1;34m━━━  %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m  %s\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
 warn() { printf '  \033[33m⚠\033[0m  %s\n' "$*"; }
-bold() { printf '\033[1m%s\033[0m' "$*"; }
 
 # ── Platform detect ──────────────────────────────────────────────────────────
 OS="$(uname -s)"
@@ -65,34 +66,68 @@ OUTPUT="/tmp/brainjepa_bench_embeddings.safetensors"
 [ -f "$INPUT"    ] || die "Test fMRI not found: $INPUT"
 
 # ── Define backends ──────────────────────────────────────────────────────────
-# Each backend:  label | feature flags | binary suffix
+# Each entry: label | cargo feature flags | binary suffix | infer --device arg
 BACKENDS=()
 
 if [ "$GPU_ONLY" = "0" ]; then
-    BACKENDS+=("ndarray|--features ndarray|ndarray")
-
+    BACKENDS+=("rlx-cpu|--no-default-features --features rlx-engine|rlx-cpu|cpu|infer")
     if [ "$PLATFORM" = "macOS" ]; then
-        BACKENDS+=("accelerate|--features ndarray,accelerate|accelerate")
+        BACKENDS+=("rlx-accelerate|--no-default-features --features rlx-engine,rlx-blas-accelerate|rlx-accelerate|cpu|infer")
     fi
 fi
 
-BACKENDS+=("wgpu|--no-default-features --features wgpu|wgpu")
+if [ "$PLATFORM" = "macOS" ]; then
+    BACKENDS+=("rlx-metal|--no-default-features --features rlx-engine,rlx-metal|rlx-metal|metal|infer")
+    BACKENDS+=("rlx-mlx|--no-default-features --features rlx-engine,rlx-mlx|rlx-mlx|mlx|infer")
+    BACKENDS+=("rlx-gpu|--no-default-features --features rlx-engine,rlx-gpu|rlx-gpu|gpu|infer")
+else
+    BACKENDS+=("rlx-gpu|--no-default-features --features rlx-engine,rlx-gpu|rlx-gpu|gpu|infer")
+fi
 
-# ── Build target ─────────────────────────────────────────────────────────────
-TARGET_DIR=/tmp/brainjepa-bench-target
+if [ "$BURN" = "1" ]; then
+    if [ "$GPU_ONLY" = "0" ]; then
+        BACKENDS+=("burn-ndarray|--no-default-features --features burn-engine|burn-ndarray||infer-burn")
+        if [ "$PLATFORM" = "macOS" ]; then
+            BACKENDS+=("burn-accelerate|--no-default-features --features burn-engine,blas-accelerate|burn-accelerate||infer-burn")
+        fi
+    fi
+    BACKENDS+=("burn-wgpu|--no-default-features --features burn,wgpu|burn-wgpu||infer-burn")
+fi
+
+# ── Build / results dirs (one target dir per backend — infer binary is shared name) ─
+BENCH_ROOT=/tmp/brainjepa-bench
+RESULTS_DIR="$BENCH_ROOT/results"
 
 # ── Header ───────────────────────────────────────────────────────────────────
 step "Brain-JEPA benchmark  —  $PLATFORM ($NCPUS threads)"
-info "runs=$RUNS  no-build=$NO_BUILD  gpu-only=$GPU_ONLY"
+info "runs=$RUNS  no-build=$NO_BUILD  gpu-only=$GPU_ONLY  burn=$BURN"
 info "weights  : $WEIGHTS"
 info "gradient : $GRADIENT"
 info "input    : $INPUT"
 
+# ── Step 0: Tests ────────────────────────────────────────────────────────────
+step "[0/4] Tests"
+
+info "cargo test --no-default-features --features rlx-engine"
+cargo test --no-default-features --features rlx-engine 2>&1 \
+    | grep -E "^(test |running |test result:|error)" || true
+cargo test --no-default-features --features rlx-engine --quiet || die "RLX tests failed"
+ok "RLX unit tests"
+
+if [ -x "$SCRIPT_DIR/scripts/parity.sh" ]; then
+    info "bash scripts/parity.sh --quick"
+    bash "$SCRIPT_DIR/scripts/parity.sh" --quick || die "parity gate failed"
+    ok "parity (quick)"
+fi
+
+rm -rf "$RESULTS_DIR"
+mkdir -p "$RESULTS_DIR"
+
 # ── Step 1: Build ────────────────────────────────────────────────────────────
-step "[1/3] Build"
+step "[1/4] Build"
 
 build_backend() {
-    local label="$1" features="$2" suffix="$3"
+    local label="$1" features="$2" suffix="$3" bin_name="${4:-infer}"
     local bin_out="/tmp/brainjepa-${suffix}"
 
     if [ "$NO_BUILD" = "1" ]; then
@@ -105,27 +140,56 @@ build_backend() {
         fi
     fi
 
+    local target_dir="$BENCH_ROOT/target-$suffix"
+    local build_log
+    build_log=$(mktemp "${TMPDIR:-/tmp}/brainjepa_build.XXXXXX")
     info "Building $label ..."
-    info "  cargo build --release $features --bin infer"
+    info "  cargo build --release $features --bin $bin_name"
 
-    if CARGO_TARGET_DIR="$TARGET_DIR" \
-        cargo build --release $features --bin infer 2>&1 \
-        | grep -E "^(error|warning\[|   Compiling|    Finished)" || true; then
+    local mlx_jobs=""
+    if [ -n "${CARGO_BUILD_JOBS:-}" ]; then
+        mlx_jobs="$CARGO_BUILD_JOBS"
+    elif [ "$suffix" = "rlx-mlx" ]; then
+        mlx_jobs=2
+    fi
 
-        cp "$TARGET_DIR/release/infer" "$bin_out"
-        chmod +x "$bin_out"
-        ok "$label  ->  $bin_out"
-        return 0
+    if [ -n "$mlx_jobs" ]; then
+        _build() {
+            CARGO_TARGET_DIR="$target_dir" CARGO_BUILD_JOBS="$mlx_jobs" \
+                cargo build --release $features --bin "$bin_name"
+        }
     else
-        warn "$label: build failed — skipping"
+        _build() {
+            CARGO_TARGET_DIR="$target_dir" \
+                cargo build --release $features --bin "$bin_name"
+        }
+    fi
+
+    if ! _build >"$build_log" 2>&1; then
+        grep -E "^(error|warning\[|   Compiling|    Finished)" "$build_log" || true
+        warn "$label: build failed — skipping (see $build_log)"
+        rm -f "$build_log"
         return 1
     fi
+    grep -E "^(error|warning\[|   Compiling|    Finished)" "$build_log" || true
+    rm -f "$build_log"
+
+    if [ ! -f "$target_dir/release/$bin_name" ]; then
+        warn "$label: binary missing after build — skipping"
+        return 1
+    fi
+
+    cp "$target_dir/release/$bin_name" "$bin_out"
+    chmod +x "$bin_out"
+    ok "$label  ->  $bin_out"
+    return 0
 }
 
 BUILT_BACKENDS=()
 for entry in "${BACKENDS[@]}"; do
-    IFS='|' read -r label features suffix <<< "$entry"
-    if build_backend "$label" "$features" "$suffix"; then
+    IFS='|' read -r label features suffix _device bin_name <<< "$entry"
+    bin_name="${bin_name:-infer}"
+    if build_backend "$label" "$features" "$suffix" "$bin_name"; then
         BUILT_BACKENDS+=("$entry")
     fi
 done
@@ -135,16 +199,12 @@ if [ ${#BUILT_BACKENDS[@]} -eq 0 ]; then
 fi
 
 # ── Step 2: Benchmark ────────────────────────────────────────────────────────
-step "[2/3] Benchmark  ($RUNS iterations each)"
+step "[2/4] Benchmark  ($RUNS iterations each)"
 
-# Associative arrays for results
-declare -A ENCODE_BEST
-declare -A WEIGHTS_BEST
-declare -A TOTAL_BEST
-declare -A ENCODE_ALL
+result_file() { echo "$RESULTS_DIR/$1.$2"; }
 
 run_backend() {
-    local label="$1" suffix="$2"
+    local label="$1" suffix="$2" device="$3"
     local bin="/tmp/brainjepa-${suffix}"
 
     if [ ! -x "$bin" ]; then
@@ -159,25 +219,30 @@ run_backend() {
     local best_total=999999999
     local all_encodes=""
 
+    local device_args=()
+    if [ -n "$device" ]; then
+        device_args=(--device "$device")
+    fi
+
     for i in $(seq 1 "$RUNS"); do
         info "  Run $i/$RUNS ..."
 
-        # Capture stderr (contains TIMING line) while letting stdout print
         local stderr_file
         stderr_file=$(mktemp /tmp/brainjepa_bench_stderr.XXXXXX)
 
         "$bin" \
+            "${device_args[@]}" \
             --weights "$WEIGHTS" \
             --gradient "$GRADIENT" \
             --input "$INPUT" \
             --output "$OUTPUT" \
             2>"$stderr_file" || {
                 warn "  Run $i failed"
+                cat "$stderr_file" >&2 || true
                 rm -f "$stderr_file"
                 continue
             }
 
-        # Parse TIMING line: TIMING weights=Xms encode=Xms total=Xms
         local timing_line
         timing_line=$(grep '^TIMING ' "$stderr_file" 2>/dev/null || true)
         rm -f "$stderr_file"
@@ -194,14 +259,12 @@ run_backend() {
 
         info "  weights=${w_ms}ms  encode=${e_ms}ms  total=${t_ms}ms"
 
-        # Track all encode times for this backend
         if [ -n "$all_encodes" ]; then
             all_encodes="${all_encodes},${e_ms}"
         else
             all_encodes="${e_ms}"
         fi
 
-        # Update best (integer comparison via awk for floats)
         best_encode=$(awk "BEGIN { print ($e_ms < $best_encode) ? $e_ms : $best_encode }")
         best_weights=$(awk "BEGIN { print ($w_ms < $best_weights) ? $w_ms : $best_weights }")
         best_total=$(awk "BEGIN { print ($t_ms < $best_total) ? $t_ms : $best_total }")
@@ -212,35 +275,46 @@ run_backend() {
         return
     fi
 
-    ENCODE_BEST[$suffix]="$best_encode"
-    WEIGHTS_BEST[$suffix]="$best_weights"
-    TOTAL_BEST[$suffix]="$best_total"
-    ENCODE_ALL[$suffix]="$all_encodes"
+    echo "$best_encode"  > "$(result_file "$suffix" encode)"
+    echo "$best_weights" > "$(result_file "$suffix" weights)"
+    echo "$best_total"   > "$(result_file "$suffix" total)"
+    echo "$all_encodes"  > "$(result_file "$suffix" all)"
 
     ok "$label  best-of-${RUNS}:  encode=${best_encode}ms  weights=${best_weights}ms  total=${best_total}ms"
 }
 
+has_result() {
+    [ -f "$(result_file "$1" encode)" ]
+}
+
+read_result() {
+    cat "$(result_file "$1" "$2")" 2>/dev/null || echo ""
+}
+
 for entry in "${BUILT_BACKENDS[@]}"; do
-    IFS='|' read -r label features suffix <<< "$entry"
-    run_backend "$label" "$suffix"
+    IFS='|' read -r label features suffix device <<< "$entry"
+    run_backend "$label" "$suffix" "$device"
 done
 
 # ── Step 3: Summary table ────────────────────────────────────────────────────
-step "[3/3] Summary"
+step "[3/4] Summary"
 
-if [ ${#ENCODE_BEST[@]} -eq 0 ]; then
-    die "No successful benchmark results."
-fi
+any_results=0
+for entry in "${BUILT_BACKENDS[@]}"; do
+    IFS='|' read -r _label _features suffix _device <<< "$entry"
+    if has_result "$suffix"; then any_results=1; break; fi
+done
+[ "$any_results" = "1" ] || die "No successful benchmark results."
 
-# Find the slowest encode time for speedup ratio (baseline = slowest)
 baseline_encode=0
 baseline_label=""
 for entry in "${BUILT_BACKENDS[@]}"; do
-    IFS='|' read -r label features suffix <<< "$entry"
-    if [ -n "${ENCODE_BEST[$suffix]+x}" ]; then
-        is_slower=$(awk "BEGIN { print (${ENCODE_BEST[$suffix]} > $baseline_encode) }")
+    IFS='|' read -r label _features suffix _device <<< "$entry"
+    if has_result "$suffix"; then
+        enc=$(read_result "$suffix" encode)
+        is_slower=$(awk "BEGIN { print ($enc > $baseline_encode) }")
         if [ "$is_slower" = "1" ]; then
-            baseline_encode="${ENCODE_BEST[$suffix]}"
+            baseline_encode="$enc"
             baseline_label="$label"
         fi
     fi
@@ -249,26 +323,24 @@ done
 info "Baseline (slowest): $baseline_label @ ${baseline_encode}ms"
 info ""
 
-# Print table header
 printf '  \033[1m%-24s  %10s  %10s  %10s  %10s\033[0m\n' \
     "Backend" "Weights" "Encode" "Total" "Speedup"
 printf '  %-24s  %10s  %10s  %10s  %10s\n' \
     "------------------------" "----------" "----------" "----------" "----------"
 
 for entry in "${BUILT_BACKENDS[@]}"; do
-    IFS='|' read -r label features suffix <<< "$entry"
-    if [ -z "${ENCODE_BEST[$suffix]+x}" ]; then
+    IFS='|' read -r label _features suffix _device <<< "$entry"
+    if ! has_result "$suffix"; then
         printf '  %-24s  %10s  %10s  %10s  %10s\n' \
             "$label" "FAIL" "FAIL" "FAIL" "-"
         continue
     fi
 
-    local_encode="${ENCODE_BEST[$suffix]}"
-    local_weights="${WEIGHTS_BEST[$suffix]}"
-    local_total="${TOTAL_BEST[$suffix]}"
+    local_encode=$(read_result "$suffix" encode)
+    local_weights=$(read_result "$suffix" weights)
+    local_total=$(read_result "$suffix" total)
     speedup=$(awk "BEGIN { printf \"%.2f\", $baseline_encode / $local_encode }")
 
-    # Color fastest green
     if [ "$speedup" = "1.00" ]; then
         printf '  %-24s  %8sms  %8sms  %8sms  %9sx\n' \
             "$label" "$local_weights" "$local_encode" "$local_total" "$speedup"
@@ -279,18 +351,16 @@ for entry in "${BUILT_BACKENDS[@]}"; do
 done
 
 info ""
-
-# Print per-run details
 info "Per-run encode times (ms):"
 for entry in "${BUILT_BACKENDS[@]}"; do
-    IFS='|' read -r label features suffix <<< "$entry"
-    if [ -n "${ENCODE_ALL[$suffix]+x}" ]; then
-        info "  $label: ${ENCODE_ALL[$suffix]}"
+    IFS='|' read -r label _features suffix _device <<< "$entry"
+    if has_result "$suffix"; then
+        info "  $label: $(read_result "$suffix" all)"
     fi
 done
 
-info ""
+step "[4/4] Done"
 info "Platform : $PLATFORM  ($NCPUS threads)"
 info "Runs     : $RUNS per backend"
 info "Binary   : /tmp/brainjepa-{backend}"
-ok "Done."
+ok "Benchmark complete."

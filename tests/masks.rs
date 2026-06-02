@@ -13,7 +13,7 @@ fn device() -> burn::backend::ndarray::NdArrayDevice {
 fn full_context_mask_shape() {
     let n_rois = 10;
     let n_time = 5;
-    let mask = brainjepa::full_context_mask::<B>(n_rois, n_time, &device());
+    let mask = brainjepa::burn::full_context_mask::<B>(n_rois, n_time, &device());
     assert_eq!(mask.dims(), [1, n_rois * n_time]);
 }
 
@@ -22,7 +22,7 @@ fn full_context_mask_indices_sequential() {
     let n_rois = 8;
     let n_time = 4;
     let n = n_rois * n_time;
-    let mask = brainjepa::full_context_mask::<B>(n_rois, n_time, &device());
+    let mask = brainjepa::burn::full_context_mask::<B>(n_rois, n_time, &device());
     let data = mask.squeeze::<1>().into_data();
     let indices: Vec<i64> = data.to_vec::<i64>().unwrap();
     let expected: Vec<i64> = (0..n as i64).collect();
@@ -31,7 +31,7 @@ fn full_context_mask_indices_sequential() {
 
 #[test]
 fn full_context_mask_single_patch() {
-    let mask = brainjepa::full_context_mask::<B>(1, 1, &device());
+    let mask = brainjepa::burn::full_context_mask::<B>(1, 1, &device());
     assert_eq!(mask.dims(), [1, 1]);
     let data = mask.into_data();
     let indices: Vec<i64> = data.to_vec::<i64>().unwrap();
@@ -45,7 +45,7 @@ fn random_block_mask_indices_in_bounds() {
     let n_rois = 20;
     let n_time = 10;
     let n = n_rois * n_time;
-    let mask = brainjepa::masks::random_block_mask::<B>(
+    let mask = brainjepa::burn::random_block_mask::<B>(
         n_rois, n_time, 0.5, 0.5, 4, &device(),
     );
     assert_eq!(mask.dims()[0], 1);
@@ -61,7 +61,7 @@ fn random_block_mask_respects_min_keep() {
     let n_rois = 5;
     let n_time = 5;
     let min_keep = 10;
-    let mask = brainjepa::masks::random_block_mask::<B>(
+    let mask = brainjepa::burn::random_block_mask::<B>(
         n_rois, n_time, 0.1, 0.1, min_keep, &device(),
     );
     let k = mask.dims()[1];
@@ -70,7 +70,7 @@ fn random_block_mask_respects_min_keep() {
 
 #[test]
 fn random_block_mask_sorted() {
-    let mask = brainjepa::masks::random_block_mask::<B>(
+    let mask = brainjepa::burn::random_block_mask::<B>(
         15, 8, 0.4, 0.3, 4, &device(),
     );
     let data = mask.squeeze::<1>().into_data();
@@ -90,7 +90,7 @@ fn jepa_masks_returns_enc_plus_three_pred() {
         seed: Some(42),
         ..Default::default()
     };
-    let (enc_mask, pred_masks) = brainjepa::jepa_masks::<B>(&cfg, &device());
+    let (enc_mask, pred_masks) = brainjepa::burn::jepa_masks::<B>(&cfg, &device());
     assert_eq!(enc_mask.dims()[0], 1);
     assert_eq!(pred_masks.len(), 3);
 }
@@ -106,7 +106,7 @@ fn jepa_masks_indices_in_range() {
         seed: Some(123),
         ..Default::default()
     };
-    let (enc_mask, pred_masks) = brainjepa::jepa_masks::<B>(&cfg, &device());
+    let (enc_mask, pred_masks) = brainjepa::burn::jepa_masks::<B>(&cfg, &device());
 
     let check = |mask: Tensor<B, 2, Int>, label: &str| {
         let data = mask.squeeze::<1>().into_data();
@@ -134,8 +134,8 @@ fn jepa_masks_seed_reproducibility() {
         ..Default::default()
     };
 
-    let (enc1, pred1) = brainjepa::jepa_masks::<B>(&cfg, &device());
-    let (enc2, pred2) = brainjepa::jepa_masks::<B>(&cfg, &device());
+    let (enc1, pred1) = brainjepa::burn::jepa_masks::<B>(&cfg, &device());
+    let (enc2, pred2) = brainjepa::burn::jepa_masks::<B>(&cfg, &device());
 
     let to_vec = |t: Tensor<B, 2, Int>| -> Vec<i64> {
         t.squeeze::<1>().into_data().to_vec::<i64>().unwrap()
@@ -157,7 +157,7 @@ fn jepa_masks_pred_not_in_encoder() {
         seed: Some(77),
         ..Default::default()
     };
-    let (enc_mask, pred_masks) = brainjepa::jepa_masks::<B>(&cfg, &device());
+    let (enc_mask, pred_masks) = brainjepa::burn::jepa_masks::<B>(&cfg, &device());
 
     let enc_data = enc_mask.squeeze::<1>().into_data();
     let enc_indices: Vec<i64> = enc_data.to_vec::<i64>().unwrap();

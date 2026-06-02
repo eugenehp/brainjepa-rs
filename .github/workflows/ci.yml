@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rlx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: eugenehp/rlx
+          path: rlx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: RLX unit tests
+        run: cargo test --features rlx-engine --test config --test masks_indices --test rlx_classification --test rlx_graph_compile --test rlx_predictor_compile --test rlx_weights_load --test rlx_device_errors
+      - name: CSV export test
+        run: cargo test --features rlx-engine --test csv_export
+
+  parity-quick:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: eugenehp/rlx
+          path: rlx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Quick parity (RLX CPU)
+        run: bash scripts/parity.sh --quick
+
+  cross-backend:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: eugenehp/rlx
+          path: rlx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Download weights (if missing)
+        run: |
+          if [ ! -f data/brainjepa.safetensors ]; then
+            cargo run --release --bin download_weights --features hf-download || true
+          fi
+      - name: RLX cross-backend parity
+        run: bash scripts/parity.sh
+
+  burn-parity:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: eugenehp/rlx
+          path: rlx
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Download weights (if missing)
+        run: |
+          if [ ! -f data/brainjepa.safetensors ]; then
+            cargo run --release --bin download_weights --features hf-download || true
+          fi
+      - name: RLX vs Burn parity (encoder + predictor)
+        run: |
+          cargo test --release --no-default-features --features burn-engine,rlx-engine \
+            --test parity_rlx_vs_burn --test parity_rlx_predictor_vs_burn -- --nocapture
