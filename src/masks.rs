@@ -1,6 +1,4 @@
-//! Spatiotemporal masking for Brain-JEPA (engine-agnostic indices).
-//!
-//! Burn tensor masks are available with `burn-engine` via [`full_context_mask_tensor`].
+//! Spatiotemporal masking for Brain-JEPA (engine-agnostic patch indices).
 
 /// Configuration for spatiotemporal mask generation.
 #[derive(Debug, Clone)]
@@ -127,58 +125,5 @@ fn shuffle(v: &mut [i64]) {
     for i in (1..v.len()).rev() {
         let j = fastrand::usize(..=i);
         v.swap(i, j);
-    }
-}
-
-// ── Burn tensor adapters (parity / benchmark only) ───────────────────────────
-
-#[cfg(feature = "burn")]
-pub use burn_adapters::*;
-
-#[cfg(feature = "burn")]
-mod burn_adapters {
-    use burn::prelude::*;
-
-    use super::{full_context_mask, jepa_masks, random_block_mask, MaskConfig};
-
-    pub fn full_context_mask_tensor<B: Backend>(
-        n_rois: usize,
-        n_time_patches: usize,
-        device: &B::Device,
-    ) -> Tensor<B, 2, Int> {
-        indices_to_tensor::<B>(&full_context_mask(n_rois, n_time_patches), device)
-    }
-
-    pub fn random_block_mask_tensor<B: Backend>(
-        n_rois: usize,
-        n_time_patches: usize,
-        roi_frac: f64,
-        time_frac: f64,
-        min_keep: usize,
-        device: &B::Device,
-    ) -> Tensor<B, 2, Int> {
-        indices_to_tensor::<B>(
-            &random_block_mask(n_rois, n_time_patches, roi_frac, time_frac, min_keep),
-            device,
-        )
-    }
-
-    pub fn jepa_masks_tensor<B: Backend>(
-        cfg: &MaskConfig,
-        device: &B::Device,
-    ) -> (Tensor<B, 2, Int>, Vec<Tensor<B, 2, Int>>) {
-        let (enc, preds) = jepa_masks(cfg);
-        let enc_t = indices_to_tensor::<B>(&enc, device);
-        let pred_t = preds
-            .iter()
-            .map(|p| indices_to_tensor::<B>(p, device))
-            .collect();
-        (enc_t, pred_t)
-    }
-
-    fn indices_to_tensor<B: Backend>(indices: &[i64], device: &B::Device) -> Tensor<B, 2, Int> {
-        let k = indices.len();
-        Tensor::<B, 1, Int>::from_data(TensorData::new(indices.to_vec(), vec![k]), device)
-            .unsqueeze_dim::<2>(0)
     }
 }

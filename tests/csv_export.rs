@@ -3,9 +3,7 @@ use std::io::Read;
 
 fn fake_embedding_result(n_rois: usize, n_time: usize, embed_dim: usize) -> EmbeddingResult {
     let n_patches = n_rois * n_time;
-    let embeddings: Vec<f32> = (0..n_patches * embed_dim)
-        .map(|i| i as f32 * 0.1)
-        .collect();
+    let embeddings: Vec<f32> = (0..n_patches * embed_dim).map(|i| i as f32 * 0.1).collect();
     EmbeddingResult {
         embeddings,
         shape: vec![n_patches, embed_dim],
@@ -118,18 +116,17 @@ fn csv_with_metadata_roi_time_values() {
     let lines: Vec<&str> = content.lines().collect();
 
     // Expected row order: (roi=0,t=0), (roi=0,t=1), (roi=0,t=2), (roi=1,t=0), ...
-    let expected_pairs = vec![
-        (0, 0), (0, 1), (0, 2),
-        (1, 0), (1, 1), (1, 2),
-    ];
+    let expected_pairs = vec![(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)];
     for (i, &(roi, time)) in expected_pairs.iter().enumerate() {
         let cols: Vec<&str> = lines[i + 1].split(',').collect();
         assert_eq!(
-            cols[0].parse::<usize>().unwrap(), roi,
+            cols[0].parse::<usize>().unwrap(),
+            roi,
             "row {i}: expected roi_idx={roi}"
         );
         assert_eq!(
-            cols[1].parse::<usize>().unwrap(), time,
+            cols[1].parse::<usize>().unwrap(),
+            time,
             "row {i}: expected time_idx={time}"
         );
     }

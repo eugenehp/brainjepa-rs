@@ -13,12 +13,12 @@ pub use super::attn_layout::AttnLayout;
 #[derive(Clone)]
 pub struct EncoderSpec {
     pub b: usize,
-    pub h: usize,        // n_rois
-    pub w: usize,        // n_time
-    pub patch: usize,    // patch_size
-    pub w_p: usize,      // w / patch
-    pub n: usize,        // h * w_p
-    pub dim: usize,      // embed_dim
+    pub h: usize,     // n_rois
+    pub w: usize,     // n_time
+    pub patch: usize, // patch_size
+    pub w_p: usize,   // w / patch
+    pub n: usize,     // h * w_p
+    pub dim: usize,   // embed_dim
     pub depth: usize,
     pub num_heads: usize,
     pub head_dim: usize,
@@ -26,9 +26,15 @@ pub struct EncoderSpec {
     pub norm_eps: f32,
 }
 
-fn s1(d: usize) -> Shape { Shape::new(&[d], DType::F32) }
-fn s2(a: usize, b: usize) -> Shape { Shape::new(&[a, b], DType::F32) }
-fn s4(a: usize, b: usize, c: usize, d: usize) -> Shape { Shape::new(&[a, b, c, d], DType::F32) }
+fn s1(d: usize) -> Shape {
+    Shape::new(&[d], DType::F32)
+}
+fn s2(a: usize, b: usize) -> Shape {
+    Shape::new(&[a, b], DType::F32)
+}
+fn s4(a: usize, b: usize, c: usize, d: usize) -> Shape {
+    Shape::new(&[a, b, c, d], DType::F32)
+}
 
 fn attn_block(
     g: &mut Graph,
@@ -120,7 +126,6 @@ pub fn build_encoder_graph(spec: &EncoderSpec, attn_layout: AttnLayout) -> Graph
     let b = spec.b;
     let h = spec.h;
     let w = spec.w;
-    let wp = spec.w_p;
     let n = spec.n;
     let d = spec.dim;
     let ps = spec.patch;
@@ -130,7 +135,7 @@ pub fn build_encoder_graph(spec: &EncoderSpec, attn_layout: AttnLayout) -> Graph
     // Positional embedding [1, N, D] — set once via `set_param("pos_embed", …)`.
     let pos = g.param("pos_embed", Shape::new(&[1, n, d], DType::F32));
 
-    // Patch embedding: reshape temporal windows + matmul (matches Burn `PatchEmbed`).
+    // Patch embedding: reshape temporal windows + matmul (ViT-style patch embed).
     // Avoids Conv2d so Metal can lower the full graph via MPSGraph.
     let x_bhw = g.reshape_(x, vec![b as i64, h as i64, w as i64]);
     let x_win = g.reshape_(x_bhw, vec![b as i64, n as i64, ps as i64]);
@@ -181,7 +186,11 @@ pub fn build_encoder_embed_graph(spec: &EncoderSpec) -> Graph {
 }
 
 /// Transformer blocks + final norm on `[B, N, D]` patch tokens.
-pub fn build_encoder_trunk_graph(spec: &EncoderSpec, attn_layout: AttnLayout, n_seq: usize) -> Graph {
+pub fn build_encoder_trunk_graph(
+    spec: &EncoderSpec,
+    attn_layout: AttnLayout,
+    n_seq: usize,
+) -> Graph {
     let mut g = Graph::new("brainjepa_encoder_trunk");
     let b = spec.b;
     let d = spec.dim;
@@ -340,4 +349,3 @@ pub fn build_predictor_graph(spec: &PredictorSpec, attn_layout: AttnLayout) -> G
     g.set_outputs(vec![out]);
     g
 }
-

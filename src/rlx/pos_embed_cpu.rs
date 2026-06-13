@@ -1,7 +1,6 @@
 //! CPU-side construction of Brain-JEPA 2D positional embeddings.
 //!
-//! The Burn implementation computes a "height" sincos grid and a
-//! "width" embedding that is either:
+//! Builds a "height" sincos grid and a "width" embedding that is either:
 //! - `origin`: sincos over temporal patch index
 //! - `mapping`: learned linear projection of brain gradient coordinates,
 //!   repeated across the temporal axis and min/max normalised to [-1, 1]
@@ -85,12 +84,16 @@ pub fn build_pos_embed(
                 }
             }
 
-            // Min/max normalise to [-1, 1] (same as Burn path).
+            // Min/max normalise to [-1, 1].
             let mut min_v = f32::INFINITY;
             let mut max_v = f32::NEG_INFINITY;
             for &v in &rep {
-                if v < min_v { min_v = v; }
-                if v > max_v { max_v = v; }
+                if v < min_v {
+                    min_v = v;
+                }
+                if v > max_v {
+                    max_v = v;
+                }
             }
             let range = (max_v - min_v).max(1e-12);
             for v in &mut rep {
@@ -153,4 +156,3 @@ fn sincos_1d_width(half_dim: usize, grid_h: usize, grid_w: usize) -> Vec<f32> {
     }
     data
 }
-

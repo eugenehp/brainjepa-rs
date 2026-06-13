@@ -1,9 +1,8 @@
 #!/bin/bash
-# Parity gate for Burn → RLX migration.
+# Parity gate: RLX cross-backend vs CPU reference.
 #
 # Usage:
-#   bash scripts/parity.sh           # CPU vs Burn + cross-backend (features permitting)
-#   bash scripts/parity.sh --quick   # CPU vs Burn only
+#   bash scripts/parity.sh
 #
 # Env:
 #   BRAINJEPA_WEIGHTS / BRAINJEPA_GRADIENT — override data paths
@@ -13,18 +12,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
-
-QUICK=0
-for arg in "$@"; do
-    case "$arg" in
-        --quick) QUICK=1 ;;
-        -h|--help)
-            echo "Usage: bash scripts/parity.sh [--quick]"
-            exit 0
-            ;;
-        *) echo "Unknown: $arg" >&2; exit 1 ;;
-    esac
-done
 
 if [ -n "${BRAINJEPA_ATTN_LAYOUT:-}" ] && [ "${BRAINJEPA_ATTN_LAYOUT}" != "bsnh" ]; then
     echo "error: unset BRAINJEPA_ATTN_LAYOUT or set to bsnh for parity (got ${BRAINJEPA_ATTN_LAYOUT})" >&2
@@ -41,23 +28,6 @@ if [ ! -f "$WEIGHTS" ]; then
     exit 1
 fi
 
-step "RLX encoder vs Burn"
-cargo test --release --no-default-features \
-    --features burn-engine,rlx-engine \
-    --test parity_rlx_vs_burn -- --nocapture
-ok "parity_rlx_vs_burn (encoder)"
-
-step "RLX predictor vs Burn"
-cargo test --release --no-default-features \
-    --features burn-engine,rlx-engine \
-    --test parity_rlx_predictor_vs_burn -- --nocapture
-ok "parity_rlx_predictor_vs_burn"
-
-if [ "$QUICK" = "1" ]; then
-    step "Done (quick)"
-    exit 0
-fi
-
 OS="$(uname -s)"
 CROSS_FEATURES="rlx-engine"
 if [ "$OS" = "Darwin" ]; then
@@ -72,7 +42,7 @@ fi
 step "RLX cross-backend vs CPU — encoder + predictor ($CROSS_FEATURES)"
 cargo test --release --no-default-features \
     --features "$CROSS_FEATURES" \
-    --test parity_rlx_cross_backend -- --nocapture
-ok "parity_rlx_cross_backend (encoder + predictor per backend)"
+    --test parity_rlx_cross_backend -- --nocapture --test-threads=1
+ok "parity_rlx_cross_backend"
 
 step "Done"

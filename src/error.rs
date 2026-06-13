@@ -7,7 +7,6 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum BrainJepaError {
     // ── Config ───────────────────────────────────────────────────────────────
-
     #[error("unknown model variant \"{name}\" (expected vit_small, vit_base, or vit_large)")]
     UnknownVariant { name: String },
 
@@ -15,18 +14,14 @@ pub enum BrainJepaError {
     InvalidPosMode { mode: String },
 
     // ── Files ────────────────────────────────────────────────────────────────
-
     #[error("{kind} file not found: {path}")]
     FileNotFound { kind: &'static str, path: PathBuf },
 
     // ── Data ─────────────────────────────────────────────────────────────────
-
     #[error("CSV is empty or contains no valid rows: {path}")]
     EmptyCsv { path: PathBuf },
 
-    #[error(
-        "CSV row {row} has {got} columns, expected {expected} (file: {path})"
-    )]
+    #[error("CSV row {row} has {got} columns, expected {expected} (file: {path})")]
     InconsistentCsvRow {
         path: PathBuf,
         row: usize,
@@ -37,23 +32,18 @@ pub enum BrainJepaError {
     #[error("gradient CSV has {got} ROIs, expected {expected}")]
     GradientRoiMismatch { expected: usize, got: usize },
 
-    #[error(
-        "cannot downsample {src} frames to {dst} (target must be <= source)"
-    )]
+    #[error("cannot downsample {src} frames to {dst} (target must be <= source)")]
     DownsampleUpscale { src: usize, dst: usize },
 
     // ── Weights ──────────────────────────────────────────────────────────────
-
     #[error("weight key not found: {key}")]
     WeightKeyMissing { key: String },
 
     // ── Tensor ───────────────────────────────────────────────────────────────
-
     #[error("tensor conversion failed: {reason}")]
     TensorConversion { reason: String },
 
     // ── Pass-through ─────────────────────────────────────────────────────────
-
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

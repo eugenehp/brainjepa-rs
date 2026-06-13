@@ -3,12 +3,13 @@
 **Brain-JEPA fMRI Foundation Model — fully Rust inference pipeline.**
 
 `brainjepa` ports the [Brain-JEPA](https://github.com/hzlab/Brain-JEPA) encoder
-(NeurIPS 2024, Spotlight) to Rust with two inference engines:
+(NeurIPS 2024, Spotlight) to Rust using [RLX](https://docs.rs/rlx) (`rlx-engine`, default).
 
-| Engine | Cargo feature | Binary | Default |
-|--------|---------------|--------|---------|
-| [RLX](https://docs.rs/rlx) | `rlx-engine` | `infer`, `classify`, `predict` | yes |
-| [Burn](https://burn.dev) 0.20 | `burn-engine` | `infer-burn` | parity / benchmarks only |
+| Binary | Purpose |
+|--------|---------|
+| `infer` | Encoder embeddings |
+| `classify` | Downstream classification |
+| `predict` | JEPA masked prediction |
 
 Pretrained weights load from safetensors; inference runs without Python or PyTorch.
 
@@ -18,7 +19,7 @@ fMRI parcellated time series  (450 ROIs x T time points)
    v  Data loading (CSV / safetensors)
    |  standardise -> temporal downsample (490 -> 160 frames)
    |
-   v  Brain-JEPA encoder (RLX or Burn)
+   v  Brain-JEPA encoder (RLX)
    |  PatchEmbed       Conv2d(1, 768, (1,16), (1,16))
    |  GradientPosEmbed sincos + brain gradient projection
    |  12x Block        LayerNorm -> MultiHeadAttn -> LayerNorm -> MLP(GELU)
@@ -98,34 +99,7 @@ cargo run --release --bin predict -- \
 
 ---
 
-## Burn reference path (`burn-engine`, `infer-burn`)
-
-```sh
-# CPU
-cargo run --release --no-default-features --features burn-engine --bin infer-burn -- \
-    --weights data/brainjepa.safetensors \
-    --gradient data/gradient_mapping_450.csv \
-    --input data/fmri_sample.safetensors
-
-# macOS Accelerate
-cargo run --release --no-default-features --features burn-engine,blas-accelerate --bin infer-burn -- ...
-
-# GPU (Metal / Vulkan)
-cargo run --release --no-default-features --features burn,wgpu --bin infer-burn -- ...
-```
-
-Parity builds enable **both** engines:
-
-```sh
-cargo test --release --no-default-features \
-  --features burn-engine,rlx-engine --test parity_rlx_vs_burn
-```
-
----
-
 ## Backends
-
-### RLX (default)
 
 | Feature | Backend | Build |
 |---------|---------|-------|
@@ -138,21 +112,12 @@ cargo test --release --no-default-features \
 | `rlx-cuda` | NVIDIA CUDA | `--features rlx-engine,rlx-cuda` |
 | `rlx-apple-silicon` | cpu + metal + accelerate | `--features rlx-engine,rlx-apple-silicon` |
 
-### Burn (optional)
-
-| Feature | Backend | Build |
-|---------|---------|-------|
-| `ndarray` | CPU, Rayon + SIMD | `--no-default-features --features burn,ndarray` |
-| `blas-accelerate` | CPU + Accelerate | `burn,ndarray,blas-accelerate` |
-| `wgpu` | GPU Metal/Vulkan | `burn,wgpu` |
-| `wgpu-f16` | GPU half precision | `burn,wgpu-f16` |
-
 ---
 
 ## CLI
 
 ```
-Brain-JEPA fMRI encoder inference (RLX default, optional Burn)
+Brain-JEPA fMRI encoder inference (RLX)
 
 Usage: infer [OPTIONS] --input <INPUT>
 
@@ -187,24 +152,13 @@ let result = encoder.encode_safetensors("data/fmri_sample.safetensors")?;
 result.save_safetensors("embeddings.safetensors")?;
 ```
 
-Burn path (with `--features burn,ndarray`):
-
-```rust
-use brainjepa::prelude::*;
-use burn::backend::NdArray;
-
-type B = NdArray;
-let device = burn::backend::ndarray::NdArrayDevice::Cpu;
-let (encoder, _) = BrainJepaEncoder::<B>::from_weights(...)?;
-```
-
 ### Entry points
 
-| Type | Feature | Use case |
-|------|---------|----------|
-| `BrainJepaEncoder` | `rlx` or `burn` | latent embeddings |
-| `BrainJepaPredictor` | `burn` only | JEPA evaluation |
-| `ClassificationHead` | `burn` only | downstream classification |
+| Type | Use case |
+|------|----------|
+| `BrainJepaEncoder` | latent embeddings |
+| `BrainJepaPredictor` | JEPA evaluation |
+| `ClassificationHead` | downstream classification |
 
 ---
 
@@ -221,7 +175,7 @@ cargo run --release --no-default-features --features rlx-engine,rlx-metal --bin 
 cargo run --example backend_compare --release --features rlx-engine,rlx-metal,rlx-gpu
 ```
 
-`mlx` is not on crates.io — use a git `rlx` dependency with the `mlx` feature, then enable `rlx-mlx` on this crate.
+`rlx` **0.2.6+** from crates.io; enable `rlx-mlx` for Apple MLX (`--features rlx-engine,rlx-mlx`).
 
 On macOS, native `--device metal` is usually preferable to `--device gpu` (wgpu).
 
@@ -236,9 +190,8 @@ cargo test --features rlx-engine --test rlx_graph_compile
 # RLX param load vs real checkpoint
 cargo test --release --features rlx-engine --test rlx_weights_load
 
-# Parity gate (Burn → RLX migration) — see docs/PARITY.md
-bash scripts/parity.sh              # CPU vs Burn + GPU backends vs CPU
-bash scripts/parity.sh --quick      # RLX CPU vs Burn only
+# Cross-backend parity — see docs/PARITY.md
+bash scripts/parity.sh
 ```
 
 ---
@@ -270,17 +223,16 @@ See original [Brain-JEPA paper](https://arxiv.org/abs/2409.19407) for details.
 
 ```
 src/
-  rlx/                  # RLX graph, weights loader, encoder inference
-  inference.rs          # Burn encoder (feature "burn")
-  model/                # Burn ViT modules
+  rlx/                  # RLX graph, weights loader, encoder / predictor
   hf_download.rs        # HuggingFace cache + download
   bin/
     infer.rs            # CLI
-    download_weights.rs # HF downloader
+    classify.rs
+    predict.rs
+    download_weights.rs
 tests/
   rlx_graph_compile.rs
   rlx_weights_load.rs
-  parity_rlx_vs_burn.rs
   parity_rlx_cross_backend.rs
 docs/
   PARITY.md

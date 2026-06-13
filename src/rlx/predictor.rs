@@ -39,7 +39,6 @@ pub struct BrainJepaPredictor {
     predictor_embed_compiled: rlx::CompiledGraph,
     encoder_params: ParamMap,
     predictor_params: ParamMap,
-    pos_embed: Vec<f32>,
     pred_pos_embed: Vec<f32>,
     /// Context / target patch indices used when compiling graphs (from [`MaskConfig::seed`]).
     pub enc_indices: Vec<i64>,
@@ -116,10 +115,7 @@ impl BrainJepaPredictor {
             Some((w, b, _)) => {
                 grad_w_store = w.clone();
                 grad_b_store = b.clone();
-                (
-                    Some(grad_w_store.as_slice()),
-                    Some(grad_b_store.as_slice()),
-                )
+                (Some(grad_w_store.as_slice()), Some(grad_b_store.as_slice()))
             }
             None => (None, None),
         };
@@ -173,8 +169,12 @@ impl BrainJepaPredictor {
             hidden_dim: (model_cfg.pred_emb_dim as f64 * model_cfg.mlp_ratio) as usize,
             norm_eps: model_cfg.norm_eps as f32,
         };
-        let mut predictor_embed_compiled =
-            session.compile(build_predictor_embed_graph(1, n_ctx, model_cfg.embed_dim, model_cfg.pred_emb_dim));
+        let mut predictor_embed_compiled = session.compile(build_predictor_embed_graph(
+            1,
+            n_ctx,
+            model_cfg.embed_dim,
+            model_cfg.pred_emb_dim,
+        ));
         apply_params(&mut predictor_embed_compiled, &predictor_params);
 
         let mut predictor_compiled = session.compile(build_predictor_graph(&pred_spec, attn));
@@ -199,7 +199,6 @@ impl BrainJepaPredictor {
                 predictor_embed_compiled,
                 encoder_params,
                 predictor_params,
-                pos_embed,
                 pred_pos_embed,
                 enc_indices: enc_mask,
                 pred_indices,
@@ -213,7 +212,10 @@ impl BrainJepaPredictor {
         (&self.enc_indices, &self.pred_indices)
     }
 
-    fn trunk(&mut self, attn: super::attn_layout::AttnLayout) -> anyhow::Result<&mut rlx::CompiledGraph> {
+    fn trunk(
+        &mut self,
+        attn: super::attn_layout::AttnLayout,
+    ) -> anyhow::Result<&mut rlx::CompiledGraph> {
         let n_ctx = self.n_ctx;
         if !self.trunk_cache.contains_key(&n_ctx) {
             let spec = EncoderSpec {
@@ -230,8 +232,8 @@ impl BrainJepaPredictor {
                 hidden_dim: (self.embed_dim as f64 * self.model_cfg.mlp_ratio) as usize,
                 norm_eps: self.model_cfg.norm_eps as f32,
             };
-            let mut compiled =
-                rlx::Session::new(self.device).compile(build_encoder_trunk_graph(&spec, attn, n_ctx));
+            let mut compiled = rlx::Session::new(self.device)
+                .compile(build_encoder_trunk_graph(&spec, attn, n_ctx));
             apply_params(&mut compiled, &self.encoder_params);
             self.trunk_cache.insert(n_ctx, compiled);
         }
@@ -311,7 +313,13 @@ impl BrainJepaPredictor {
             .next()
             .ok_or_else(|| anyhow::anyhow!("embed graph produced no output"))?;
 
-        let h_ctx = apply_masks_f32(&h_full, 1, self.n_patches, self.embed_dim, &[enc_indices.to_vec()]);
+        let h_ctx = apply_masks_f32(
+            &h_full,
+            1,
+            self.n_patches,
+            self.embed_dim,
+            &[enc_indices.to_vec()],
+        );
         let enc_out = self
             .trunk(attn)?
             .run(&[("h0", &h_ctx)])
@@ -319,11 +327,7 @@ impl BrainJepaPredictor {
             .next()
             .ok_or_else(|| anyhow::anyhow!("encoder trunk produced no output"))?;
 
-        let tokens = self.assemble_predictor_tokens(
-            &enc_out,
-            enc_indices,
-            pred_indices,
-        )?;
+        let tokens = self.assemble_predictor_tokens(&enc_out, enc_indices, pred_indices)?;
 
         let pred_out = self
             .predictor_compiled

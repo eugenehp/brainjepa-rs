@@ -11,7 +11,9 @@
 
 use clap::Parser;
 
-use brainjepa::rlx::{ensure_device, parse_device, predict_class, BrainJepaEncoder, RlxClassificationHead};
+use brainjepa::rlx::{
+    ensure_device, parse_device, predict_class, BrainJepaEncoder, RlxClassificationHead,
+};
 use brainjepa::{DataConfig, ModelConfig};
 
 #[derive(Parser, Debug)]

@@ -9,13 +9,13 @@ use crate::config::{DataConfig, ModelConfig};
 use crate::data::{self, GradientData};
 use crate::error::BrainJepaError;
 
-use super::device::ensure_device;
 use super::attn_layout::resolve_attn_layout;
+use super::device::ensure_device;
 use super::graph::{build_encoder_graph, EncoderSpec};
 use super::pos_embed_cpu::build_pos_embed;
 use super::weights::{apply_params, build_encoder_params, load_safetensors, ParamMap};
 
-/// Encoder embedding output (same shape as the Burn path).
+/// Encoder embedding output.
 pub struct EmbeddingResult {
     /// Latent embeddings: row-major f32, shape [n_patches, embed_dim]
     pub embeddings: Vec<f32>,
@@ -30,23 +30,45 @@ pub struct EmbeddingResult {
 }
 
 impl EmbeddingResult {
-    pub fn n_patches(&self) -> usize { self.n_rois * self.n_time_patches }
-    pub fn embed_dim(&self) -> usize { self.shape.get(1).copied().unwrap_or(0) }
+    pub fn n_patches(&self) -> usize {
+        self.n_rois * self.n_time_patches
+    }
+    pub fn embed_dim(&self) -> usize {
+        self.shape.get(1).copied().unwrap_or(0)
+    }
 
     pub fn save_safetensors(&self, path: &str) -> anyhow::Result<()> {
         use safetensors::{Dtype, View};
         use std::borrow::Cow;
 
-        struct RawTensor { data: Vec<u8>, shape: Vec<usize> }
+        struct RawTensor {
+            data: Vec<u8>,
+            shape: Vec<usize>,
+        }
         impl View for RawTensor {
-            fn dtype(&self) -> Dtype { Dtype::F32 }
-            fn shape(&self) -> &[usize] { &self.shape }
-            fn data(&self) -> Cow<'_, [u8]> { Cow::Borrowed(&self.data) }
-            fn data_len(&self) -> usize { self.data.len() }
+            fn dtype(&self) -> Dtype {
+                Dtype::F32
+            }
+            fn shape(&self) -> &[usize] {
+                &self.shape
+            }
+            fn data(&self) -> Cow<'_, [u8]> {
+                Cow::Borrowed(&self.data)
+            }
+            fn data_len(&self) -> usize {
+                self.data.len()
+            }
         }
 
-        let bytes: Vec<u8> = self.embeddings.iter().flat_map(|f| f.to_le_bytes()).collect();
-        let tensor = RawTensor { data: bytes, shape: self.shape.clone() };
+        let bytes: Vec<u8> = self
+            .embeddings
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect();
+        let tensor = RawTensor {
+            data: bytes,
+            shape: self.shape.clone(),
+        };
         let pairs: Vec<(&str, RawTensor)> = vec![("embeddings", tensor)];
         let out = safetensors::serialize(pairs, None)?;
         std::fs::write(path, out)?;
@@ -62,7 +84,11 @@ fn warmup_run(compiled: &mut rlx::CompiledGraph, x: &[f32]) {
 }
 
 /// Copy the sole graph output from the arena after `run_slots`.
-fn read_output_f32(compiled: &rlx::CompiledGraph, off: usize, len: usize) -> anyhow::Result<Vec<f32>> {
+fn read_output_f32(
+    compiled: &rlx::CompiledGraph,
+    off: usize,
+    len: usize,
+) -> anyhow::Result<Vec<f32>> {
     let base = compiled.arena_ptr();
     anyhow::ensure!(len > 0, "encoder output is empty");
     let out = unsafe { std::slice::from_raw_parts(base.add(off) as *const f32, len) };
@@ -77,7 +103,6 @@ pub struct BrainJepaEncoder {
     #[allow(dead_code)]
     params: ParamMap,
     compiled: rlx::CompiledGraph,
-    pos_embed: Vec<f32>, // [1, N, D] row-major
 
     n_rois: usize,
     #[allow(dead_code)]
@@ -175,7 +200,6 @@ impl BrainJepaEncoder {
                 device: *device,
                 params,
                 compiled,
-                pos_embed: pos,
                 n_rois,
                 n_time,
                 n_time_patches,
@@ -196,8 +220,6 @@ impl BrainJepaEncoder {
     }
 
     pub fn encode_safetensors(&mut self, fmri_path: &str) -> anyhow::Result<EmbeddingResult> {
-        // Reuse the existing loader (Burn) only when Burn is enabled.
-        // For RLX-only builds, load the safetensors file directly into f32.
         let input = data::load_fmri_safetensors_f32(fmri_path)
             .with_context(|| format!("loading fmri safetensors: {fmri_path}"))?;
         self.encode_f32(input.data, input.n_rois, input.n_time)
@@ -247,4 +269,3 @@ impl BrainJepaEncoder {
         })
     }
 }
-

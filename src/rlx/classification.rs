@@ -1,6 +1,6 @@
 //! Downstream classification head in RLX (mean-pool + LayerNorm + linear).
 //!
-//! Replaces the Burn `ClassificationHead` for RLX-only builds. Checkpoint keys:
+//! Checkpoint keys:
 //!   `{prefix}.head.weight`, `{prefix}.head.bias`,
 //!   `{prefix}.fc_norm.weight`, `{prefix}.fc_norm.bias`
 
@@ -27,7 +27,10 @@ pub fn build_classification_graph(
     norm_eps: f32,
 ) -> Graph {
     let mut g = Graph::new("brainjepa_cls");
-    let emb = g.input("embeddings", Shape::new(&[1, n_patches, embed_dim], DType::F32));
+    let emb = g.input(
+        "embeddings",
+        Shape::new(&[1, n_patches, embed_dim], DType::F32),
+    );
     let pooled = g.mean(emb, vec![1], false);
     let ln_w = g.param("fc_norm.weight", s1(embed_dim));
     let ln_b = g.param("fc_norm.bias", s1(embed_dim));
@@ -104,18 +107,9 @@ impl ClassificationHead {
     }
 
     /// Load head weights from a safetensors file (downstream checkpoint).
-    pub fn load_weights(
-        &mut self,
-        weights_path: &str,
-        prefix: &str,
-    ) -> anyhow::Result<()> {
+    pub fn load_weights(&mut self, weights_path: &str, prefix: &str) -> anyhow::Result<()> {
         let mut raw = load_safetensors(weights_path)?;
-        let params = load_head_params(
-            &mut raw,
-            prefix,
-            self.embed_dim,
-            self.num_classes,
-        )?;
+        let params = load_head_params(&mut raw, prefix, self.embed_dim, self.num_classes)?;
         apply_params(&mut self.compiled, &params);
         Ok(())
     }

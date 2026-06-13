@@ -1,4 +1,4 @@
-use brainjepa::{ModelConfig, DataConfig, BrainJepaError};
+use brainjepa::{BrainJepaError, DataConfig, ModelConfig};
 
 #[test]
 fn from_variant_vit_base() {

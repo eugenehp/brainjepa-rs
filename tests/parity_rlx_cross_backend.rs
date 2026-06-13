@@ -1,5 +1,8 @@
 //! RLX encoder + JEPA predictor on each backend vs RLX CPU reference.
 //!
+//! Run with `--test-threads=1` — BHSD/BSNH cases set `BRAINJEPA_ATTN_LAYOUT` and
+//! must not run in parallel with other tests.
+//!
 //! Requires real weights (`data/brainjepa.safetensors` or HF cache).
 //!
 //! ```text
@@ -14,6 +17,7 @@
 //! ```
 
 #![cfg(feature = "rlx")]
+#![allow(dead_code, unused_imports)] // helpers used by cfg-gated backend tests (metal, mlx, gpu, …)
 
 mod parity_harness;
 

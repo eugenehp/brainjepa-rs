@@ -20,9 +20,9 @@ pub fn resolve_attn_layout(device: Device) -> anyhow::Result<AttnLayout> {
     {
         Some(v) if v == "bhsd" => Ok(AttnLayout::Bhsd),
         Some(v) if v == "bsnh" => Ok(AttnLayout::Bsnh),
-        Some(other) => anyhow::bail!(
-            "invalid BRAINJEPA_ATTN_LAYOUT={other:?} (expected bsnh or bhsd)"
-        ),
+        Some(other) => {
+            anyhow::bail!("invalid BRAINJEPA_ATTN_LAYOUT={other:?} (expected bsnh or bhsd)")
+        }
         None if matches!(device, Device::Metal) => Ok(AttnLayout::Bhsd),
         None => Ok(AttnLayout::Bsnh),
     }

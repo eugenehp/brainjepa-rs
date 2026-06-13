@@ -6,26 +6,24 @@
 #   bash benchmark.sh --runs 5        # 5 iterations per backend
 #   bash benchmark.sh --no-build      # skip cargo build (use existing binaries)
 #   bash benchmark.sh --gpu-only        # skip CPU, only bench metal/mlx (macOS) or gpu (Linux)
-#   bash benchmark.sh --burn            # also bench Burn backends (ndarray, accelerate, wgpu)
 #
-# On macOS  -> RLX: cpu, metal, mlx (+ optional Burn)
-# On Linux  -> RLX: cpu, gpu (+ optional Burn)
+# On macOS  -> RLX: cpu, metal, mlx, wgpu
+# On Linux  -> RLX: cpu, gpu
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
-RUNS=3; NO_BUILD=0; GPU_ONLY=0; BURN=0
+RUNS=3; NO_BUILD=0; GPU_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --runs)      shift; RUNS="$1" ;;
         --runs=*)    RUNS="${1#--runs=}" ;;
         --no-build)  NO_BUILD=1 ;;
         --gpu-only)  GPU_ONLY=1 ;;
-        --burn)      BURN=1 ;;
         -h|--help)
-            printf 'Usage: bash %s [--runs N] [--no-build] [--gpu-only] [--burn]\n' "$0"
+            printf 'Usage: bash %s [--runs N] [--no-build] [--gpu-only]\n' "$0"
             exit 0 ;;
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
     esac
@@ -84,23 +82,13 @@ else
     BACKENDS+=("rlx-gpu|--no-default-features --features rlx-engine,rlx-gpu|rlx-gpu|gpu|infer")
 fi
 
-if [ "$BURN" = "1" ]; then
-    if [ "$GPU_ONLY" = "0" ]; then
-        BACKENDS+=("burn-ndarray|--no-default-features --features burn-engine|burn-ndarray||infer-burn")
-        if [ "$PLATFORM" = "macOS" ]; then
-            BACKENDS+=("burn-accelerate|--no-default-features --features burn-engine,blas-accelerate|burn-accelerate||infer-burn")
-        fi
-    fi
-    BACKENDS+=("burn-wgpu|--no-default-features --features burn,wgpu|burn-wgpu||infer-burn")
-fi
-
 # ── Build / results dirs (one target dir per backend — infer binary is shared name) ─
 BENCH_ROOT=/tmp/brainjepa-bench
 RESULTS_DIR="$BENCH_ROOT/results"
 
 # ── Header ───────────────────────────────────────────────────────────────────
 step "Brain-JEPA benchmark  —  $PLATFORM ($NCPUS threads)"
-info "runs=$RUNS  no-build=$NO_BUILD  gpu-only=$GPU_ONLY  burn=$BURN"
+info "runs=$RUNS  no-build=$NO_BUILD  gpu-only=$GPU_ONLY"
 info "weights  : $WEIGHTS"
 info "gradient : $GRADIENT"
 info "input    : $INPUT"
@@ -115,9 +103,9 @@ cargo test --no-default-features --features rlx-engine --quiet || die "RLX tests
 ok "RLX unit tests"
 
 if [ -x "$SCRIPT_DIR/scripts/parity.sh" ]; then
-    info "bash scripts/parity.sh --quick"
-    bash "$SCRIPT_DIR/scripts/parity.sh" --quick || die "parity gate failed"
-    ok "parity (quick)"
+    info "bash scripts/parity.sh"
+    bash "$SCRIPT_DIR/scripts/parity.sh" || die "parity gate failed"
+    ok "parity"
 fi
 
 rm -rf "$RESULTS_DIR"

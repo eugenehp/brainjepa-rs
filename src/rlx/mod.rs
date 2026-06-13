@@ -1,7 +1,6 @@
 //! RLX-backed Brain-JEPA inference (`rlx::Graph` + `rlx::Session`).
 //!
-//! Enable with `--features rlx` (default). Burn-backed types live at the
-//! crate root when `--features burn` is enabled.
+//! RLX-backed Brain-JEPA inference (`rlx-engine`, default).
 
 pub mod attn_layout;
 pub mod classification;
@@ -15,7 +14,8 @@ pub mod weights;
 
 pub use attn_layout::{resolve_attn_layout, AttnLayout};
 pub use classification::{predict_class, ClassificationHead as RlxClassificationHead};
-pub use device::{available_devices, ensure_device, parse_device, prepare_device, recommended_features};
+pub use device::{
+    available_devices, ensure_device, parse_device, prepare_device, recommended_features,
+};
 pub use inference::{BrainJepaEncoder, EmbeddingResult};
 pub use predictor::BrainJepaPredictor;
-

@@ -6,7 +6,7 @@ use brainjepa::rlx::graph::{
     build_encoder_embed_graph, build_encoder_trunk_graph, build_predictor_graph, EncoderSpec,
     PredictorSpec,
 };
-use brainjepa::rlx::{resolve_attn_layout, AttnLayout};
+use brainjepa::rlx::AttnLayout;
 use rlx::Device;
 
 #[test]

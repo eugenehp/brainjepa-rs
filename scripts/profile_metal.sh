@@ -1,5 +1,5 @@
 #!/bin/bash
-# Profile Brain-JEPA Metal encode paths (requires local ../rlx).
+# Profile Brain-JEPA Metal encode paths (rlx from crates.io).
 #
 # Usage:
 #   bash scripts/profile_metal.sh
@@ -22,7 +22,7 @@ BIN="$ROOT/target/release/infer"
 
 step() { printf '\n\033[1;34m━━━  %s\033[0m\n' "$*"; }
 
-step "Build (rlx-metal from ../rlx)"
+step "Build (rlx-metal)"
 cargo build --release --no-default-features --features rlx-engine,rlx-metal --bin infer
 
 [ -x "$BIN" ] || die "infer binary missing"

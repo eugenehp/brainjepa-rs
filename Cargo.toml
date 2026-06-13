@@ -1,9 +1,9 @@
 [package]
 name = "brainjepa"
-version = "0.1.0"
+version = "0.2.7"
 edition = "2021"
 rust-version = "1.78"
-description = "Brain-JEPA fMRI Foundation Model — inference in Rust (RLX and/or Burn)"
+description = "Brain-JEPA fMRI Foundation Model — inference in Rust (RLX)"
 keywords      = ["fmri", "foundation-model", "neuroscience", "brain", "vision-transformer"]
 categories    = ["science", "mathematics", "algorithms"]
 authors       = ["Eugene Hauptmann"]
@@ -32,13 +32,13 @@ path = "src/bin/infer.rs"
 required-features = ["rlx-engine"]
 
 [[bin]]
-name = "infer-burn"
-path = "src/bin/infer_burn.rs"
-required-features = ["burn-engine"]
-
-[[bin]]
 name = "classify"
 path = "src/bin/classify.rs"
+required-features = ["rlx-engine"]
+
+[[bin]]
+name = "predict"
+path = "src/bin/predict.rs"
 required-features = ["rlx-engine"]
 
 [[bin]]
@@ -56,37 +56,7 @@ name = "backend_compare"
 path = "examples/backend_compare.rs"
 required-features = ["rlx-engine"]
 
-[[example]]
-name = "embed"
-path = "examples/embed.rs"
-required-features = ["burn-engine"]
-
-[[example]]
-name = "batch"
-path = "examples/batch.rs"
-required-features = ["burn-engine"]
-
-[[example]]
-name = "classify"
-path = "examples/classify.rs"
-required-features = ["burn-engine"]
-
-[[example]]
-name = "csv_export"
-path = "examples/csv_export.rs"
-required-features = ["burn-engine"]
-
-[[example]]
-name = "profile"
-path = "examples/profile.rs"
-required-features = ["burn-engine"]
-
 # ── Tests ──────────────────────────────────────────────────────────────────
-[[test]]
-name = "classification"
-path = "tests/classification.rs"
-required-features = ["burn-engine"]
-
 [[test]]
 name = "config"
 path = "tests/config.rs"
@@ -95,21 +65,6 @@ path = "tests/config.rs"
 name = "csv_export"
 path = "tests/csv_export.rs"
 required-features = ["rlx-engine"]
-
-[[test]]
-name = "data_loading"
-path = "tests/data_loading.rs"
-required-features = ["burn-engine"]
-
-[[test]]
-name = "masks"
-path = "tests/masks.rs"
-required-features = ["burn-engine"]
-
-[[test]]
-name = "model"
-path = "tests/model.rs"
-required-features = ["burn-engine"]
 
 [[test]]
 name = "rlx_graph_compile"
@@ -127,21 +82,6 @@ path = "tests/rlx_device_errors.rs"
 required-features = ["rlx-engine"]
 
 [[test]]
-name = "parity_rlx_vs_burn"
-path = "tests/parity_rlx_vs_burn.rs"
-required-features = ["burn-engine", "rlx-engine"]
-
-[[test]]
-name = "parity_rlx_predictor_vs_burn"
-path = "tests/parity_rlx_predictor_vs_burn.rs"
-required-features = ["burn-engine", "rlx-engine"]
-
-[[bin]]
-name = "predict"
-path = "src/bin/predict.rs"
-required-features = ["rlx-engine"]
-
-[[test]]
 name = "parity_rlx_cross_backend"
 path = "tests/parity_rlx_cross_backend.rs"
 required-features = ["rlx-engine"]
@@ -156,46 +96,18 @@ name = "masks_indices"
 path = "tests/masks_indices.rs"
 
 [[test]]
-name = "standardize_parity"
-path = "tests/standardize_parity.rs"
-required-features = ["burn-engine"]
-
-[[test]]
 name = "rlx_predictor_compile"
 path = "tests/rlx_predictor_compile.rs"
 required-features = ["rlx-engine"]
 
 [features]
-# Default: RLX only. Burn is opt-in for parity / benchmarks (`burn-engine`).
 default = ["rlx-engine"]
 
-# ── Inference engines ───────────────────────────────────────────────────────
+# ── Inference engine ────────────────────────────────────────────────────────
 rlx  = ["dep:rlx"]
-burn = ["dep:burn"]
+rlx-engine = ["rlx", "rlx-cpu"]
 
-rlx-engine  = ["rlx", "rlx-cpu"]
-# Reference Burn stack — not in default builds; use for `infer-burn` + parity tests.
-burn-engine = ["burn", "ndarray"]
-# Alias for CI / docs
-burn-benchmark = ["burn-engine"]
-
-# ── Burn backends (each requires `burn`; CPU needs `ndarray` too) ──────────
-# CPU backend — Rayon multi-threading + SIMD enabled by default
-ndarray         = ["burn", "dep:burn-ndarray", "burn/ndarray"]
-# macOS: swap matmul impl to Apple Accelerate (multi-threaded, very fast on Apple Silicon)
-# Recommended: cargo build --release --features accelerate
-accelerate      = ["blas-accelerate"]
-blas-accelerate = ["burn", "ndarray", "burn-ndarray?/blas-accelerate"]
-# Linux: use system OpenBLAS (apt install libopenblas-dev)
-openblas-system = ["burn", "ndarray", "burn-ndarray?/blas-openblas-system"]
-# GPU backend — wgpu on Metal (macOS) or Vulkan (Linux with GPU)
-wgpu            = ["burn", "burn/wgpu"]
-# GPU backend with f16 (half-precision) — 2x less memory, faster on supported GPUs.
-# Requires Metal (macOS) or Vulkan (Linux). Not compatible with ndarray (CPU).
-# Usage: cargo build --release --no-default-features --features wgpu-f16
-wgpu-f16        = ["burn", "burn/wgpu"]
-
-# ── RLX backends (forwarded to the rlx crate; same pattern as zuna-rs) ───
+# ── RLX backends (forwarded to the rlx crate) ───────────────────────────────
 rlx-cpu             = ["rlx", "rlx/cpu"]
 rlx-blas-accelerate = ["rlx", "rlx/blas-accelerate"]
 rlx-blas-mkl        = ["rlx", "rlx/blas-mkl"]
@@ -209,7 +121,7 @@ rlx-tpu             = ["rlx", "rlx/tpu"]
 rlx-apple-silicon   = ["rlx", "rlx/apple-silicon"]
 rlx-nvidia          = ["rlx", "rlx/nvidia"]
 
-# Shorthand aliases (RLX)
+# Shorthand aliases
 cpu             = ["rlx-cpu"]
 mlx             = ["rlx-mlx"]
 metal           = ["rlx-metal"]
@@ -220,14 +132,10 @@ tpu             = ["rlx-tpu"]
 apple-silicon   = ["rlx-apple-silicon"]
 nvidia          = ["rlx-nvidia"]
 
-# HuggingFace Hub downloader — requires TLS
-hf-download     = ["dep:hf-hub"]
+hf-download = ["dep:hf-hub"]
 
 [dependencies]
-burn = { version = "0.20.1", default-features = false, features = ["std", "simd"], optional = true }
-burn-ndarray = { version = "0.20.1", default-features = false, features = ["std", "simd", "multi-threads"], optional = true }
-
-rlx = { path = "../rlx/rlx", default-features = false, optional = true }
+rlx = { version = "0.2.6", default-features = false, optional = true }
 
 safetensors = "0.7"
 half = { version = "2", features = ["bytemuck"] }
@@ -239,9 +147,7 @@ serde_yaml = "0.9"
 anyhow = "1"
 fastrand = "2"
 thiserror = "2"
-ndarray = "0.16"
 
-# HuggingFace Hub client — optional; only compiled with --features hf-download.
 hf-hub = { version = "0.5", default-features = false, features = ["ureq"], optional = true }
 
 [dev-dependencies]
@@ -252,6 +158,3 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
-
-[patch.crates-io]
-cubek-matmul = { git = "https://github.com/eugenehp/cubek.git", branch = "cubek-matmul", package = "cubek-matmul" }

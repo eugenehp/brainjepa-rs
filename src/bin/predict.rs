@@ -62,13 +62,8 @@ fn main() -> anyhow::Result<()> {
     let (enc_idx, pred_masks) = jepa.default_jepa_masks();
     let pred_idx = &pred_masks[0];
 
-    let (enc_out, pred_out) = jepa.predict_f32(
-        fmri.data,
-        fmri.n_rois,
-        fmri.n_time,
-        &enc_idx,
-        pred_idx,
-    )?;
+    let (enc_out, pred_out) =
+        jepa.predict_f32(fmri.data, fmri.n_rois, fmri.n_time, &enc_idx, pred_idx)?;
 
     println!(
         "Context  : {} patches × {} dims",

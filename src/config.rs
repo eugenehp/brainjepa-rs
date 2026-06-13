@@ -50,16 +50,36 @@ pub struct ModelConfig {
     pub pos_mode: String,
 }
 
-fn default_model_name() -> String { "vit_base".into() }
-fn default_embed_dim() -> usize { 768 }
-fn default_depth() -> usize { 12 }
-fn default_num_heads() -> usize { 12 }
-fn default_mlp_ratio() -> f64 { 4.0 }
-fn default_pred_depth() -> usize { 6 }
-fn default_pred_emb_dim() -> usize { 384 }
-fn default_patch_size() -> usize { 16 }
-fn default_norm_eps() -> f64 { 1e-6 }
-fn default_pos_mode() -> String { "mapping".into() }
+fn default_model_name() -> String {
+    "vit_base".into()
+}
+fn default_embed_dim() -> usize {
+    768
+}
+fn default_depth() -> usize {
+    12
+}
+fn default_num_heads() -> usize {
+    12
+}
+fn default_mlp_ratio() -> f64 {
+    4.0
+}
+fn default_pred_depth() -> usize {
+    6
+}
+fn default_pred_emb_dim() -> usize {
+    384
+}
+fn default_patch_size() -> usize {
+    16
+}
+fn default_norm_eps() -> f64 {
+    1e-6
+}
+fn default_pos_mode() -> String {
+    "mapping".into()
+}
 
 impl Default for ModelConfig {
     fn default() -> Self {
@@ -156,14 +176,30 @@ pub struct DataConfig {
     pub gradient_dim: usize,
 }
 
-fn default_n_rois() -> usize { 450 }
-fn default_seq_length() -> usize { 490 }
-fn default_n_cortical() -> usize { 400 }
-fn default_n_subcortical() -> usize { 50 }
-fn default_sampling_rate() -> usize { 3 }
-fn default_num_frames() -> usize { 160 }
-fn default_crop_size() -> (usize, usize) { (450, 160) }
-fn default_gradient_dim() -> usize { 30 }
+fn default_n_rois() -> usize {
+    450
+}
+fn default_seq_length() -> usize {
+    490
+}
+fn default_n_cortical() -> usize {
+    400
+}
+fn default_n_subcortical() -> usize {
+    50
+}
+fn default_sampling_rate() -> usize {
+    3
+}
+fn default_num_frames() -> usize {
+    160
+}
+fn default_crop_size() -> (usize, usize) {
+    (450, 160)
+}
+fn default_gradient_dim() -> usize {
+    30
+}
 
 impl Default for DataConfig {
     fn default() -> Self {
@@ -252,15 +288,23 @@ impl YamlConfig {
         let mut cfg = if let Some(meta) = &self.meta {
             let name = meta.model_name.as_deref().unwrap_or("vit_base");
             let mut c = ModelConfig::from_variant(name)?;
-            if let Some(d) = meta.pred_depth { c.pred_depth = d; }
-            if let Some(d) = meta.pred_emb_dim { c.pred_emb_dim = d; }
-            if let Some(ref m) = meta.add_w { c.pos_mode = m.clone(); }
+            if let Some(d) = meta.pred_depth {
+                c.pred_depth = d;
+            }
+            if let Some(d) = meta.pred_emb_dim {
+                c.pred_emb_dim = d;
+            }
+            if let Some(ref m) = meta.add_w {
+                c.pos_mode = m.clone();
+            }
             c
         } else {
             ModelConfig::default()
         };
         if let Some(mask) = &self.mask {
-            if let Some(ps) = mask.patch_size { cfg.patch_size = ps; }
+            if let Some(ps) = mask.patch_size {
+                cfg.patch_size = ps;
+            }
         }
         Ok(cfg)
     }
@@ -276,7 +320,9 @@ impl YamlConfig {
             }
         }
         if let Some(meta) = &self.meta {
-            if let Some(ds) = meta.downsample { cfg.downsample = ds; }
+            if let Some(ds) = meta.downsample {
+                cfg.downsample = ds;
+            }
         }
         cfg
     }

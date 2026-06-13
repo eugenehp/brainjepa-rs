@@ -19,9 +19,9 @@ pub fn parse_device(s: &str) -> anyhow::Result<Device> {
         "rocm" | "hip" | "amd" => Ok(Device::Rocm),
         "tpu" => Ok(Device::Tpu),
         "" => anyhow::bail!("empty device name (try: cpu, metal, mlx, gpu, cuda)"),
-        other => anyhow::bail!(
-            "unknown device '{other}' — try: cpu, metal, mlx, gpu, cuda, rocm, tpu"
-        ),
+        other => {
+            anyhow::bail!("unknown device '{other}' — try: cpu, metal, mlx, gpu, cuda, rocm, tpu")
+        }
     }
 }
 
@@ -87,7 +87,7 @@ fn mlx_extra_note() -> Option<&'static str> {
         None
     } else {
         Some(
-            "MLX needs a local rlx checkout with the mlx feature, then:\n\
+            "MLX needs rlx with the mlx feature enabled:\n\
                cargo build --release --features rlx-engine,rlx-mlx --bin infer",
         )
     }

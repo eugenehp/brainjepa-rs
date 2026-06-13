@@ -72,7 +72,10 @@ fn main() -> anyhow::Result<()> {
         let yaml = brainjepa::YamlConfig::from_file(cfg_path)?;
         (yaml.to_model_config()?, yaml.to_data_config())
     } else {
-        (ModelConfig::from_variant(&args.model)?, DataConfig::default())
+        (
+            ModelConfig::from_variant(&args.model)?,
+            DataConfig::default(),
+        )
     };
 
     println!("Loading  : {weights}");

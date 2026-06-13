@@ -5,15 +5,6 @@ use std::path::{Path, PathBuf};
 use brainjepa::{DataConfig, ModelConfig};
 use safetensors::{Dtype, View};
 
-/// RLX CPU vs Burn (encoder full forward).
-pub const TOL_RLX_CPU_VS_BURN: f32 = 5e-5;
-
-/// RLX vs Burn JEPA encoder context (masked trunk output).
-pub const TOL_RLX_PREDICTOR_ENC_VS_BURN: f32 = 5e-5;
-
-/// RLX vs Burn JEPA predictor targets.
-pub const TOL_RLX_PREDICTOR_VS_BURN: f32 = 5e-5;
-
 /// RLX GPU backend vs RLX CPU reference.
 pub const TOL_RLX_GPU_VS_CPU: f32 = 5e-3;
 

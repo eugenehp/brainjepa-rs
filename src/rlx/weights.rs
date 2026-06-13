@@ -1,8 +1,6 @@
 //! Safetensors → flat parameter map loader for the RLX backend.
 //!
-//! Mirrors the Burn-side `crate::weights` but produces plain `Vec<f32>`
-//! buffers so they can be pushed into an `rlx::CompiledGraph` via
-//! `set_param(name, &[f32])`.
+//! Produces plain `Vec<f32>` buffers for `rlx::CompiledGraph::set_param`.
 
 use std::collections::HashMap;
 
@@ -81,7 +79,10 @@ fn patch_embed_weight_for_matmul(w: ParamBuf) -> anyhow::Result<ParamBuf> {
     let &[d, one, one2, ps] = w.shape.as_slice() else {
         anyhow::bail!("patch_embed weight: expected rank-4, got {:?}", w.shape);
     };
-    anyhow::ensure!(one == 1 && one2 == 1, "patch_embed weight: expected [D,1,1,PS]");
+    anyhow::ensure!(
+        one == 1 && one2 == 1,
+        "patch_embed weight: expected [D,1,1,PS]"
+    );
     anyhow::ensure!(w.data.len() == d * ps, "patch_embed weight length mismatch");
     let mut out = vec![0f32; ps * d];
     for di in 0..d {
@@ -125,10 +126,7 @@ pub fn build_encoder_params(
     // Graph param names stay `encoder.*`; checkpoint keys use `ckpt` prefix.
     p.insert(
         "encoder.patch_embed.proj.weight".into(),
-        patch_embed_weight_for_matmul(take(
-            raw,
-            &format!("{ckpt}.patch_embed.proj.weight"),
-        )?)?,
+        patch_embed_weight_for_matmul(take(raw, &format!("{ckpt}.patch_embed.proj.weight"))?)?,
     );
     p.insert(
         "encoder.patch_embed.proj.bias".into(),
@@ -151,7 +149,10 @@ pub fn build_encoder_params(
         } else {
             p.insert(
                 format!("{gq}.attn.qkv.bias"),
-                ParamBuf { data: vec![0.0; 3 * d], shape: vec![3 * d] },
+                ParamBuf {
+                    data: vec![0.0; 3 * d],
+                    shape: vec![3 * d],
+                },
             );
         }
         p.insert(
@@ -231,7 +232,10 @@ pub fn build_predictor_params(
     } else {
         p.insert(
             "predictor.predictor_embed.bias".into(),
-            ParamBuf { data: vec![0.0; d], shape: vec![d] },
+            ParamBuf {
+                data: vec![0.0; d],
+                shape: vec![d],
+            },
         );
     }
 
@@ -256,7 +260,10 @@ pub fn build_predictor_params(
         } else {
             p.insert(
                 format!("{gq}.attn.qkv.bias"),
-                ParamBuf { data: vec![0.0; 3 * d], shape: vec![3 * d] },
+                ParamBuf {
+                    data: vec![0.0; 3 * d],
+                    shape: vec![3 * d],
+                },
             );
         }
         p.insert(
@@ -305,7 +312,10 @@ pub fn build_predictor_params(
     } else {
         p.insert(
             "predictor.predictor_proj.bias".into(),
-            ParamBuf { data: vec![0.0; d_enc], shape: vec![d_enc] },
+            ParamBuf {
+                data: vec![0.0; d_enc],
+                shape: vec![d_enc],
+            },
         );
     }
 
@@ -349,4 +359,3 @@ pub fn build_predictor_pos_embed(
     )
     .map_err(Into::into)
 }
-

@@ -27,15 +27,10 @@ pub struct ResolvedWeights {
 ///
 /// Looks in `~/.cache/huggingface/hub/models--{org}--{name}/snapshots/*/`
 /// for the expected files.
-pub fn scan_cache(
-    repo: &str,
-    hf_cache: Option<&Path>,
-) -> Option<ResolvedWeights> {
+pub fn scan_cache(repo: &str, hf_cache: Option<&Path>) -> Option<ResolvedWeights> {
     let cache_root = hf_cache
         .map(|p| p.to_path_buf())
-        .or_else(|| {
-            dirs_fallback().map(|home| home.join(".cache/huggingface/hub"))
-        })?;
+        .or_else(|| dirs_fallback().map(|home| home.join(".cache/huggingface/hub")))?;
 
     let repo_dir_name = format!("models--{}", repo.replace('/', "--"));
     let snapshots_dir = cache_root.join(&repo_dir_name).join("snapshots");
@@ -72,10 +67,7 @@ pub fn scan_cache(
 /// Requires feature `hf-download`. Downloads to the standard HF cache
 /// directory and returns paths to the cached files.
 #[cfg(feature = "hf-download")]
-pub fn download(
-    repo: &str,
-    hf_cache: Option<&Path>,
-) -> anyhow::Result<ResolvedWeights> {
+pub fn download(repo: &str, hf_cache: Option<&Path>) -> anyhow::Result<ResolvedWeights> {
     use hf_hub::api::sync::ApiBuilder;
 
     let mut builder = ApiBuilder::new();
@@ -98,10 +90,7 @@ pub fn download(
 }
 
 #[cfg(not(feature = "hf-download"))]
-pub fn download(
-    _repo: &str,
-    _hf_cache: Option<&Path>,
-) -> anyhow::Result<ResolvedWeights> {
+pub fn download(_repo: &str, _hf_cache: Option<&Path>) -> anyhow::Result<ResolvedWeights> {
     anyhow::bail!(
         "HuggingFace download requires --features hf-download.\n\
          Alternatively, download manually from https://huggingface.co/{DEFAULT_REPO}"
@@ -125,10 +114,7 @@ pub fn resolve(
 
     // 2. Scan HF cache
     if let Some(resolved) = scan_cache(repo, hf_cache) {
-        println!(
-            "Found cached weights: {}",
-            resolved.weights_path.display()
-        );
+        println!("Found cached weights: {}", resolved.weights_path.display());
         return Ok(resolved);
     }
 

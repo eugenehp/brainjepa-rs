@@ -1,4 +1,4 @@
-//! Minimal RLX embedding example (no Burn).
+//! Minimal RLX embedding example.
 //!
 //! ```sh
 //! cargo run --example embed_rlx --release -- \
@@ -7,13 +7,16 @@
 //!   data/gradient_mapping_450.csv \
 //!   data/test_fmri.safetensors
 //! ```
-use brainjepa::rlx::{ensure_device, BrainJepaEncoder, Device};
+use brainjepa::rlx::{ensure_device, BrainJepaEncoder};
 use brainjepa::{DataConfig, ModelConfig};
+use rlx::Device;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
-        eprintln!("usage: embed_rlx <weights> <gradient.csv> <input.safetensors> [output.safetensors]");
+        eprintln!(
+            "usage: embed_rlx <weights> <gradient.csv> <input.safetensors> [output.safetensors]"
+        );
         std::process::exit(1);
     }
 
@@ -38,7 +41,10 @@ fn main() -> anyhow::Result<()> {
         result.ms_encode
     );
 
-    let out = args.get(4).map(|s| s.as_str()).unwrap_or("embeddings.safetensors");
+    let out = args
+        .get(4)
+        .map(|s| s.as_str())
+        .unwrap_or("embeddings.safetensors");
     result.save_safetensors(out)?;
     println!("Saved: {out}");
     Ok(())

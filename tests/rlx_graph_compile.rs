@@ -8,8 +8,13 @@ use brainjepa::{DataConfig, ModelConfig};
 fn zero_fill_params(graph: &rlx::Graph, compiled: &mut rlx::CompiledGraph) {
     use rlx::Op;
     for node in graph.nodes() {
-        let Op::Param { name } = &node.op else { continue };
-        let n = node.shape.num_elements().expect("param shape must be static");
+        let Op::Param { name } = &node.op else {
+            continue;
+        };
+        let n = node
+            .shape
+            .num_elements()
+            .expect("param shape must be static");
         compiled.set_param(name, &vec![0.0f32; n]);
     }
 }

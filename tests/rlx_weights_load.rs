@@ -44,7 +44,10 @@ fn encoder_params_match_graph_and_checkpoint_prefix() {
     assert!(has_target, "expected target_encoder.* keys in checkpoint");
 
     let (params, grad_proj) = build_encoder_params(&mut raw, &model).expect("build params");
-    assert!(grad_proj.is_some(), "vit_base mapping mode needs grad projection weights");
+    assert!(
+        grad_proj.is_some(),
+        "vit_base mapping mode needs grad projection weights"
+    );
 
     let spec = brainjepa::rlx::graph::EncoderSpec {
         b: 1,
@@ -88,7 +91,5 @@ fn encoder_params_match_graph_and_checkpoint_prefix() {
     }
 
     assert!(graph_params > 100, "expected many encoder params in graph");
-    eprintln!(
-        "loaded {graph_params} graph params from checkpoint (prefix=target_encoder)"
-    );
+    eprintln!("loaded {graph_params} graph params from checkpoint (prefix=target_encoder)");
 }
